@@ -1219,15 +1219,35 @@ static switch_status_t switch_vpx_decode(switch_codec_t *codec, switch_frame_t *
 	switch_size_t len;
 	vpx_codec_ctx_t *decoder = NULL;
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
-	uint8_t *debugData;
-	
-	//TODO: Ivan
-	// Interpret the bytes according to your expected format
-	uint8_t IV_block[12];
-	uint16_t IV_size;
-	uint16_t IV_sum;
-
 	int is_start = 0, is_keyframe = 0, get_refresh = 0;
+
+	// //TODO: Ivan
+	// // Interpret the bytes according to your expected format
+	// uint8_t IV_block[12];
+	// uint16_t IV_size;
+	// uint16_t IV_sum;
+	// uint8_t *debugData;
+
+	// //TODO: Ivan add decryption here
+	// debugData = (uint8_t *)frame->data + frame->datalen - 16;
+	// // Print last 16 bytes of frame data
+	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last 16 bytes of frame data: ");
+	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
+	// 	*(debugData+0), *(debugData+1), *(debugData+2), *(debugData+3), *(debugData+4), *(debugData+5), *(debugData+6), *(debugData+7),
+	// 	*(debugData+8), *(debugData+9), *(debugData+10), *(debugData+11), *(debugData+12), *(debugData+13), *(debugData+14), *(debugData+15));
+
+	// // Copy IV block
+	// memcpy(IV_block, debugData, 12);
+
+	// // Copy IV size
+	// memcpy(&IV_size, debugData + 12, sizeof(uint16_t));
+
+	// // Copy IV sum
+	// memcpy(&IV_sum, debugData + 14, sizeof(uint16_t));
+	// IV_sum = (IV_sum & 0xFF) | ((IV_sum & 0xFF00) >> 8);
+	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "\nIV size: %u\nIV sum: %u\n", IV_size, IV_sum);
+
+
 
 	if (context->debug > 0 && context->debug < 4) {
 		vp9_payload_descriptor_t *desc = (vp9_payload_descriptor_t *)frame->data;
@@ -1342,31 +1362,6 @@ static switch_status_t switch_vpx_decode(switch_codec_t *codec, switch_frame_t *
 		uint8_t *data;
 		int corrupted = 0;
 		vpx_codec_err_t err;
-
-		//Log data
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decoding %ld bytes\n", len);
-			
-
-		//TODO: Ivan modification
-		debugData = (uint8_t *)frame->data + frame->datalen - 16;
-		// Print last 16 bytes of frame data
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last 16 bytes of frame data: ");
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
-			*(debugData+0), *(debugData+1), *(debugData+2), *(debugData+3), *(debugData+4), *(debugData+5), *(debugData+6), *(debugData+7),
-			*(debugData+8), *(debugData+9), *(debugData+10), *(debugData+11), *(debugData+12), *(debugData+13), *(debugData+14), *(debugData+15));
-
-
-		// Copy IV block
-		memcpy(IV_block, debugData, 12);
-
-		// Copy IV size
-		memcpy(&IV_size, debugData + 12, sizeof(uint16_t));
-
-		// Copy IV sum
-		memcpy(&IV_sum, debugData + 14, sizeof(uint16_t));
-		IV_sum = (IV_sum & 0xFF) | ((IV_sum & 0xFF00) >> 8);
-
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "\nIV size: %u\nIV sum: %u\n", IV_size, IV_sum);
 
 		switch_buffer_peek_zerocopy(context->vpx_packet_buffer, (void *)&data);
 

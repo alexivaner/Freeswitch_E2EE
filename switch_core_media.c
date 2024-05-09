@@ -46,9 +46,6 @@
 //TODO IVAN
 #include <openssl/bio.h>
 #include <openssl/evp.h>
-#include <vector>
-#include <algorithm>
-
 
 static switch_t38_options_t * switch_core_media_process_udptl(switch_core_session_t *session, sdp_session_t *sdp, sdp_media_t *m);
 static void switch_core_media_set_r_sdp_codec_string(switch_core_session_t *session, const char *codec_string, sdp_session_t *sdp, switch_sdp_type_t sdp_type);
@@ -2777,10 +2774,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	switch_media_handle_t *smh;
 	int do_cng = 0;
 
-	//TODO IVAN
-	uint8_t *debugData;
-	uint8_t unencrypted_bytes
-
 	
 	switch_assert(session);
 
@@ -3311,14 +3304,11 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 
 
 	//TODO IVan implement encryption
-	size_t unencrypted_bytes = 16; // Default to 16 bytes
-
 	if (*frame) {
 		switch_frame_t *actualFrame = *frame;
 
-		uint8_t *debugData = (uint8_t *)actualFrame->data + actualFrame->datalen - unencrypted_bytes;
+		uint8_t *debugData = (uint8_t *)actualFrame->data + actualFrame->datalen - 16;
 		if(type == SWITCH_MEDIA_TYPE_VIDEO){
-			unencrypted_bytes = 1;
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last 16 bytes of video frame data: ");
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
 				*(debugData+0), *(debugData+1), *(debugData+2), *(debugData+3), *(debugData+4), *(debugData+5), *(debugData+6), *(debugData+7),
@@ -3326,7 +3316,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		}
 
 		if(type == SWITCH_MEDIA_TYPE_AUDIO){
-			unencrypted_bytes = 10;
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last 16 bytes of audio frame data: ");
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
 				*(debugData+0), *(debugData+1), *(debugData+2), *(debugData+3), *(debugData+4), *(debugData+5), *(debugData+6), *(debugData+7),

@@ -44,8 +44,10 @@
 #include <stdbool.h>
 
 //TODO IVAN
-// #include <openssl/bio.h>
+#include <openssl/bio.h>
 // #include <openssl/evp.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
 
 static switch_t38_options_t * switch_core_media_process_udptl(switch_core_session_t *session, sdp_session_t *sdp, sdp_media_t *m);
 static void switch_core_media_set_r_sdp_codec_string(switch_core_session_t *session, const char *codec_string, sdp_session_t *sdp, switch_sdp_type_t sdp_type);
@@ -2784,6 +2786,13 @@ void copy_frame_iv(const uint8_t *actual_frame_data, size_t iv_start, size_t iv_
     }
 }
 
+void copy_frame_paylaod(const uint8_t *actual_frame_data, size_t payload_start, size_t payload_len, uint8_t *payload) {
+	// Copy data
+	for (size_t i = 0; i < payload_len; ++i) {
+		payload[i] = actual_frame_data[payload_start + i];
+	}
+}
+
 // Function to log bytes
 void log_bytes(const uint8_t *bytes, size_t len) {
     for (size_t i = 0; i < len; ++i) {
@@ -2800,9 +2809,75 @@ uint8_t* allocate_memory(size_t size) {
     return ptr;
 }
 
+int decrypt(const uint8_t* key,
+            const uint8_t* payload,
+            size_t payload_length,
+            const uint8_t* iv,
+            const uint8_t* frame_header,
+            size_t len_unencrypted_bytes,
+            uint8_t* decrypted_payload) {
+  EVP_CIPHER_CTX* ctx;
+  int len;
+  int plaintext_len;
+  int tag_offset = payload_length - 16;
+  int rv; // Declare rv here
+
+  // Create and initialize the cipher context
+  if (!(ctx = EVP_CIPHER_CTX_new())) {
+    printf("Error in Decryption 100\n");
+    return -1;
+  }
+
+  // Initialize the decryption operation with the cipher type and mode
+  if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL)) {
+    printf("Error in Decryption 200\n");
+    return -1;
+  }
+
+  // Set key and IV
+  if (!EVP_DecryptInit_ex(ctx, NULL, NULL, (const unsigned char *)key, iv)) {
+    printf("Error in Decryption 300\n");
+    return -1;
+  }
+
+  // Provide frame header as Additional Authenticated Data (AAD)
+  if (1 != EVP_DecryptUpdate(ctx, NULL, &len, frame_header, len_unencrypted_bytes)) {
+    printf("Error in Decryption 400\n");
+    return -1;
+  }
+
+  // Decrypt payload
+  if (1 != EVP_DecryptUpdate(ctx, decrypted_payload, &len, payload, tag_offset)) {
+    printf("Error in Decryption 500\n");
+    return -1;
+  }
+
+  plaintext_len = len;
+
+  // Set the expected tag value
+  if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, (void *)(payload + tag_offset))) {
+    printf("Error in Decryption 600\n");
+    return -1;
+  }
+
+  // Finalize the decryption
+  rv = EVP_DecryptFinal_ex(ctx, decrypted_payload + len, &len); // Move the declaration of rv here
+  if (1 != rv) {
+    plaintext_len = -1; // Authentication failed
+  }
+
+  // Clean up
+  EVP_CIPHER_CTX_free(ctx);
+
+  return plaintext_len;
+}
+
+
+
 // Function to decrypt the frame data
 void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
     if (*frame) {
+		const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
         switch_frame_t *actualFrame = *frame;
         size_t frame_trailer_size = 4;
         uint8_t frame_trailer[frame_trailer_size];
@@ -2811,6 +2886,11 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
         size_t iv_len = 0;
         size_t iv_start = 0;
         uint8_t *iv = NULL;
+		size_t payload_length = 0;
+		size_t payload_start = 0;
+		uint8_t *payload = NULL;
+		uint8_t decrypted_payload[1000];
+		int plaintext_len = 0;
 
         if (type == SWITCH_MEDIA_TYPE_AUDIO) {
             len_unencrypted_bytes = 1;
@@ -2824,6 +2904,9 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
         if (frame_header == NULL) {
             return; // Memory allocation failed
         }
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Encrypted total length: %u\n", actualFrame->datalen);
+
 
         // Get frame header, frame header contains unencrypted bytes
         memcpy(frame_header, actualFrame->data, len_unencrypted_bytes);
@@ -2850,6 +2933,21 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
             copy_frame_iv(actualFrame->data, iv_start, iv_len, iv);
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV: ");
             log_bytes(iv, iv_len);
+
+			//Copy encrypted payload
+			payload_length = actualFrame->datalen - (len_unencrypted_bytes + iv_len + frame_trailer_size);
+			payload = allocate_memory(payload_length);
+			payload_start = len_unencrypted_bytes;
+			copy_frame_paylaod(actualFrame->data, payload_start, payload_length, payload);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Payload length: %zu\n", payload_length);
+			//print first three payload
+			log_bytes(payload, 5);
+
+			// Decrypt the frame data
+			plaintext_len = decrypt(encryptionKey, payload, payload_length, iv, frame_header, len_unencrypted_bytes, decrypted_payload);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decrypted Payload length: %d\n", plaintext_len);
+			//Print first three decrypted payload
+			log_bytes(decrypted_payload, 5);
         }
 
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "=========================\n");
@@ -2858,17 +2956,6 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
         free(iv);
     }
 }
-
-
-// Function to decrypt the frame data
-// void decrypt_frame_data(uint8_t *data, int datalen) {
-//     // Implement your decryption algorithm here
-//     // This is just a placeholder, replace it with your decryption logic
-//     for (int i = 0; i < datalen; i++) {
-//         // Example decryption operation (XOR with a key)
-//         data[i] ^= 0xFF;
-//     }
-// }
 
 
 SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session_t *session, switch_frame_t **frame,

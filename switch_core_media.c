@@ -2766,7 +2766,8 @@ static void check_media_timeout_params(switch_core_session_t *session, switch_rt
 }
 
 // Function to copy frame trailer //TODO IVAN
-void copy_frame_trailer(const uint8_t *actual_frame_data, size_t actual_frame_size, int frame_trailer_size, uint8_t *frame_trailer) {
+// Function to copy frame trailer
+void copy_frame_trailer(const uint8_t *actual_frame_data, size_t actual_frame_size, size_t frame_trailer_size, uint8_t *frame_trailer) {
     // Calculate the starting position to copy from
     size_t start_index = (actual_frame_size > frame_trailer_size) ? (actual_frame_size - frame_trailer_size) : 0;
 
@@ -2775,6 +2776,99 @@ void copy_frame_trailer(const uint8_t *actual_frame_data, size_t actual_frame_si
         frame_trailer[i] = actual_frame_data[start_index + i];
     }
 }
+
+void copy_frame_iv(const uint8_t *actual_frame_data, size_t iv_start, size_t iv_len, uint8_t *iv) {
+    // Copy data
+    for (size_t i = 0; i < iv_len; ++i) {
+        iv[i] = actual_frame_data[iv_start + i];
+    }
+}
+
+// Function to log bytes
+void log_bytes(const uint8_t *bytes, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u ", bytes[i]);
+    }
+}
+
+// Function to allocate memory
+uint8_t* allocate_memory(size_t size) {
+    uint8_t *ptr = malloc(size * sizeof(uint8_t));
+    if (ptr == NULL) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed\n");
+    }
+    return ptr;
+}
+
+// Function to decrypt the frame data
+void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
+    if (*frame) {
+        switch_frame_t *actualFrame = *frame;
+        size_t frame_trailer_size = 4;
+        uint8_t frame_trailer[frame_trailer_size];
+        size_t len_unencrypted_bytes = 0;
+        uint8_t *frame_header = NULL;
+        size_t iv_len = 0;
+        size_t iv_start = 0;
+        uint8_t *iv = NULL;
+
+        if (type == SWITCH_MEDIA_TYPE_AUDIO) {
+            len_unencrypted_bytes = 1;
+        }
+
+        if (type == SWITCH_MEDIA_TYPE_VIDEO) {
+            len_unencrypted_bytes = 10;
+        }
+
+        frame_header = allocate_memory(len_unencrypted_bytes);
+        if (frame_header == NULL) {
+            return; // Memory allocation failed
+        }
+
+        // Get frame header, frame header contains unencrypted bytes
+        memcpy(frame_header, actualFrame->data, len_unencrypted_bytes);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header: ");
+        log_bytes(frame_header, len_unencrypted_bytes);
+
+        // Get 4 bytes of frame trailer, frame trailer contains 2 bytes of IV size and two bytes of IV checksum
+        copy_frame_trailer(actualFrame->data, actualFrame->datalen, frame_trailer_size, frame_trailer);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame trailer: ");
+        log_bytes(frame_trailer, frame_trailer_size);
+
+        // Get IV
+        iv_len = frame_trailer[0];
+        if (iv_len != 12) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV length is not 12 bytes\n");
+        } else {
+            iv_start = actualFrame->datalen - frame_trailer_size - iv_len;
+            iv = allocate_memory(iv_len);
+            if (iv == NULL) {
+                free(frame_header);
+                return; // Memory allocation failed
+            }
+
+            copy_frame_iv(actualFrame->data, iv_start, iv_len, iv);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV: ");
+            log_bytes(iv, iv_len);
+        }
+
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "=========================\n");
+
+        free(frame_header);
+        free(iv);
+    }
+}
+
+
+// Function to decrypt the frame data
+// void decrypt_frame_data(uint8_t *data, int datalen) {
+//     // Implement your decryption algorithm here
+//     // This is just a placeholder, replace it with your decryption logic
+//     for (int i = 0; i < datalen; i++) {
+//         // Example decryption operation (XOR with a key)
+//         data[i] ^= 0xFF;
+//     }
+// }
 
 
 SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session_t *session, switch_frame_t **frame,
@@ -3314,44 +3408,9 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 
 	status = SWITCH_STATUS_SUCCESS;
 
-
-	//TODO IVan implement decryption
-	if (*frame) {
-		switch_frame_t *actualFrame = *frame;
-		int frame_trailer_size = 4;
-		uint8_t frame_trailer[frame_trailer_size];
+	//TODO: MODIFIED BY IVAN
+	decrypt_frame(frame, type);
 		
-		if(type == SWITCH_MEDIA_TYPE_AUDIO){
-			//Init len of unencrypted_bytes
-			int len_unencrypted_bytes = 1;
-			uint8_t frame_header[len_unencrypted_bytes];
-
-
-			//Copy unencrypted bytes to variable frame_header
-			memcpy(frame_header, actualFrame->data, len_unencrypted_bytes);
-
-			//Log frame header
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header: ");
-			for(int i = 0; i < len_unencrypted_bytes; i++){
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u ", frame_header[i]);
-			}
-
-			//Copy last 4 bytes of actual frame into frame_trailer
-
-
-			//Call function to copy frame trailer
-			copy_frame_trailer(actualFrame->data, actualFrame->datalen, frame_trailer_size, frame_trailer);
-
-			//Log frame trailer
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame trailer: ");
-			for(int i = 0; i < frame_trailer_size; i++){
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u ", frame_trailer[i]);
-			}
-
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "=========================\n");
-		}
-		
-	}
 
 
  end:

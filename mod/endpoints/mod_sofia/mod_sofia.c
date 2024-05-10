@@ -1105,6 +1105,7 @@ static switch_status_t sofia_read_video_frame(switch_core_session_t *session, sw
 	if (sofia_test_flag(tech_pvt, TFLAG_HUP)) {
 		return SWITCH_STATUS_FALSE;
 	}
+
 #if 0
 	while (!(tech_pvt->video_read_codec.implementation && switch_core_media_ready(tech_pvt->session, SWITCH_MEDIA_TYPE_VIDEO) && !switch_channel_test_flag(channel, CF_REQ_MEDIA))) {
 		switch_ivr_parse_all_messages(tech_pvt->session);

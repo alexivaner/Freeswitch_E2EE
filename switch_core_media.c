@@ -44,8 +44,8 @@
 #include <stdbool.h>
 
 //TODO IVAN
-#include <openssl/bio.h>
-#include <openssl/evp.h>
+// #include <openssl/bio.h>
+// #include <openssl/evp.h>
 
 static switch_t38_options_t * switch_core_media_process_udptl(switch_core_session_t *session, sdp_session_t *sdp, sdp_media_t *m);
 static void switch_core_media_set_r_sdp_codec_string(switch_core_session_t *session, const char *codec_string, sdp_session_t *sdp, switch_sdp_type_t sdp_type);
@@ -2765,6 +2765,18 @@ static void check_media_timeout_params(switch_core_session_t *session, switch_rt
 	}
 }
 
+// Function to copy frame trailer //TODO IVAN
+void copy_frame_trailer(const uint8_t *actual_frame_data, size_t actual_frame_size, int frame_trailer_size, uint8_t *frame_trailer) {
+    // Calculate the starting position to copy from
+    size_t start_index = (actual_frame_size > frame_trailer_size) ? (actual_frame_size - frame_trailer_size) : 0;
+
+    // Copy data
+    for (size_t i = 0; i < frame_trailer_size; ++i) {
+        frame_trailer[i] = actual_frame_data[start_index + i];
+    }
+}
+
+
 SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session_t *session, switch_frame_t **frame,
 															 switch_io_flag_t flags, int stream_id, switch_media_type_t type)
 {
@@ -3303,23 +3315,40 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	status = SWITCH_STATUS_SUCCESS;
 
 
-	//TODO IVan implement encryption
+	//TODO IVan implement decryption
 	if (*frame) {
 		switch_frame_t *actualFrame = *frame;
-
-		uint8_t *debugData = (uint8_t *)actualFrame->data + actualFrame->datalen - 16;
-		if(type == SWITCH_MEDIA_TYPE_VIDEO){
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last 16 bytes of video frame data: ");
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
-				*(debugData+0), *(debugData+1), *(debugData+2), *(debugData+3), *(debugData+4), *(debugData+5), *(debugData+6), *(debugData+7),
-				*(debugData+8), *(debugData+9), *(debugData+10), *(debugData+11), *(debugData+12), *(debugData+13), *(debugData+14), *(debugData+15));	
-		}
-
+		int frame_trailer_size = 4;
+		uint8_t frame_trailer[frame_trailer_size];
+		
 		if(type == SWITCH_MEDIA_TYPE_AUDIO){
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last 16 bytes of audio frame data: ");
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u\n",
-				*(debugData+0), *(debugData+1), *(debugData+2), *(debugData+3), *(debugData+4), *(debugData+5), *(debugData+6), *(debugData+7),
-				*(debugData+8), *(debugData+9), *(debugData+10), *(debugData+11), *(debugData+12), *(debugData+13), *(debugData+14), *(debugData+15));	
+			//Init len of unencrypted_bytes
+			int len_unencrypted_bytes = 1;
+			uint8_t frame_header[len_unencrypted_bytes];
+
+
+			//Copy unencrypted bytes to variable frame_header
+			memcpy(frame_header, actualFrame->data, len_unencrypted_bytes);
+
+			//Log frame header
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header: ");
+			for(int i = 0; i < len_unencrypted_bytes; i++){
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u ", frame_header[i]);
+			}
+
+			//Copy last 4 bytes of actual frame into frame_trailer
+
+
+			//Call function to copy frame trailer
+			copy_frame_trailer(actualFrame->data, actualFrame->datalen, frame_trailer_size, frame_trailer);
+
+			//Log frame trailer
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame trailer: ");
+			for(int i = 0; i < frame_trailer_size; i++){
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u ", frame_trailer[i]);
+			}
+
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "=========================\n");
 		}
 		
 	}
@@ -3333,6 +3362,8 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 
 	return status;
 }
+
+
 
 //?
 SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_session_t *session,

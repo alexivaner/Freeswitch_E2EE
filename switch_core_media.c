@@ -2786,10 +2786,17 @@ void copy_frame_iv(const uint8_t *actual_frame_data, size_t iv_start, size_t iv_
     }
 }
 
-void copy_frame_paylaod(const uint8_t *actual_frame_data, size_t payload_start, size_t payload_len, uint8_t *payload) {
+void copy_frame_payload(const uint8_t *actual_frame_data, size_t payload_start, size_t payload_len, uint8_t *payload) {
 	// Copy data
 	for (size_t i = 0; i < payload_len; ++i) {
 		payload[i] = actual_frame_data[payload_start + i];
+	}
+}
+
+void copy_frame_header(const uint8_t *actual_frame_data, size_t len_unencrypted_bytes, size_t freeswitch_trailer_size, uint8_t *frame_header) {
+	// Copy data
+	for (size_t i = 0; i < len_unencrypted_bytes; ++i) {
+		frame_header[i] = actual_frame_data[i+ freeswitch_trailer_size];
 	}
 }
 
@@ -2877,80 +2884,112 @@ int decrypt(const uint8_t* key,
 // Function to decrypt the frame data
 void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
     if (*frame) {
-		const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+        const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
         switch_frame_t *actualFrame = *frame;
         size_t frame_trailer_size = 4;
+		size_t freeswitch_trailer_size = 0;
         uint8_t frame_trailer[frame_trailer_size];
         size_t len_unencrypted_bytes = 0;
         uint8_t *frame_header = NULL;
         size_t iv_len = 0;
         size_t iv_start = 0;
         uint8_t *iv = NULL;
-		size_t payload_length = 0;
-		size_t payload_start = 0;
-		uint8_t *payload = NULL;
-		uint8_t decrypted_payload[1000];
-		int plaintext_len = 0;
+        size_t payload_length = 0;
+        size_t payload_start = 0;
+        uint8_t *payload = NULL;
+        uint8_t decrypted_payload[20000];
+        int plaintext_len = 0;
+        uint8_t *decrypted_frame = NULL;
 
-        if (type == SWITCH_MEDIA_TYPE_AUDIO) {
-            len_unencrypted_bytes = 1;
-        }
-
-        if (type == SWITCH_MEDIA_TYPE_VIDEO) {
-            len_unencrypted_bytes = 10;
-        }
-
-        frame_header = allocate_memory(len_unencrypted_bytes);
-        if (frame_header == NULL) {
-            return; // Memory allocation failed
-        }
-
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Encrypted total length: %u\n", actualFrame->datalen);
-
-
-        // Get frame header, frame header contains unencrypted bytes
-        memcpy(frame_header, actualFrame->data, len_unencrypted_bytes);
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header: ");
-        log_bytes(frame_header, len_unencrypted_bytes);
-
-        // Get 4 bytes of frame trailer, frame trailer contains 2 bytes of IV size and two bytes of IV checksum
+       
+        /*Get 4 bytes of frame trailer, frame trailer contains 2 bytes of IV size and two bytes of IV checksum*/
         copy_frame_trailer(actualFrame->data, actualFrame->datalen, frame_trailer_size, frame_trailer);
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame trailer: ");
-        log_bytes(frame_trailer, frame_trailer_size);
+        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame trailer: ");
+        // log_bytes(frame_trailer, frame_trailer_size);
 
-        // Get IV
+        /*Get IV len*/
         iv_len = frame_trailer[0];
         if (iv_len != 12) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV length is not 12 bytes\n");
         } else {
+
+			if (type == SWITCH_MEDIA_TYPE_AUDIO) {
+				len_unencrypted_bytes = 1;
+				freeswitch_trailer_size = 0;
+			}
+
+			if (type == SWITCH_MEDIA_TYPE_VIDEO) {
+				len_unencrypted_bytes = 10;
+				freeswitch_trailer_size = 4;
+			}
+
+			frame_header = allocate_memory(len_unencrypted_bytes);
+			if (frame_header == NULL) {
+				return; // Memory allocation failed
+			}
+			
+			//Copy after freeswitch_trailer_size  until len_unencrypted_bytes
+			copy_frame_header(actualFrame->data, len_unencrypted_bytes, freeswitch_trailer_size, frame_header);
+
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header: ");
+			log_bytes(frame_header, len_unencrypted_bytes);
+
+
+        	/*Get IV*/
             iv_start = actualFrame->datalen - frame_trailer_size - iv_len;
             iv = allocate_memory(iv_len);
             if (iv == NULL) {
                 free(frame_header);
                 return; // Memory allocation failed
             }
-
             copy_frame_iv(actualFrame->data, iv_start, iv_len, iv);
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV: ");
             log_bytes(iv, iv_len);
 
-			//Copy encrypted payload
-			payload_length = actualFrame->datalen - (len_unencrypted_bytes + iv_len + frame_trailer_size);
-			payload = allocate_memory(payload_length);
-			payload_start = len_unencrypted_bytes;
-			copy_frame_paylaod(actualFrame->data, payload_start, payload_length, payload);
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Payload length: %zu\n", payload_length);
-			//print first three payload
-			log_bytes(payload, 5);
+        	/*Get IV*/
+            payload_length = actualFrame->datalen - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size);
+            payload = allocate_memory(payload_length);
+            payload_start = len_unencrypted_bytes+ freeswitch_trailer_size;
+            copy_frame_payload(actualFrame->data, payload_start, payload_length, payload);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Payload length: %zu\n", payload_length);
+            // Print first three payload bytes
+            log_bytes(payload, 5);
 
-			// Decrypt the frame data
-			plaintext_len = decrypt(encryptionKey, payload, payload_length, iv, frame_header, len_unencrypted_bytes, decrypted_payload);
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decrypted Payload length: %d\n", plaintext_len);
-			//Print first three decrypted payload
-			log_bytes(decrypted_payload, 5);
+            // Decrypt the frame data
+            plaintext_len = decrypt(encryptionKey, payload, payload_length, iv, frame_header, len_unencrypted_bytes, decrypted_payload);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decrypted Payload length: %d\n", plaintext_len);
+            // Print first three decrypted payload bytes
+            log_bytes(decrypted_payload, 5);
+
+            // Allocate decrypted_frame based on len_unencrypted_bytes + plaintext_len
+            decrypted_frame = allocate_memory(len_unencrypted_bytes + plaintext_len);
+
+            if (decrypted_frame != NULL) {
+                // Copy frame_header of unencrypted bytes to decrypted_frame
+                memcpy(decrypted_frame, frame_header, len_unencrypted_bytes);
+
+                // Copy decrypted result to frame_data after unecrypted bytes
+                memcpy(decrypted_frame + len_unencrypted_bytes, decrypted_payload, plaintext_len);
+
+				// Copy new decrypted frame to frame data
+				// for (size_t i = 0; i < len_unencrypted_bytes + plaintext_len; ++i) {
+				// 	// Cast void pointers to uint8_t pointers before accessing them
+				// 	((uint8_t *)actualFrame->data)[i] = ((uint8_t *)decrypted_frame)[i];
+				// }
+
+				// //Delete the rest of frame
+				// for (size_t i = len_unencrypted_bytes + plaintext_len; i < actualFrame->datalen; ++i) {
+				// 	((uint8_t *)actualFrame->data)[i] = 128;
+				// }
+
+				// Update datalen of actualFrame
+				// actualFrame->datalen = len_unencrypted_bytes + plaintext_len;
+            } else {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for decrypted frame\n");
+            }
         }
 
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "=========================\n");
+        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "=========================\n");
 
         free(frame_header);
         free(iv);
@@ -3493,10 +3532,12 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		*frame = &engine->read_frame;
 	}
 
-	status = SWITCH_STATUS_SUCCESS;
 
 	//TODO: MODIFIED BY IVAN
 	decrypt_frame(frame, type);
+
+	status = SWITCH_STATUS_SUCCESS;
+
 		
 
 

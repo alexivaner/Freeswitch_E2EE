@@ -2934,7 +2934,6 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header: ");
 			log_bytes(frame_header, len_unencrypted_bytes);
 
-
         	/*Get IV*/
             iv_start = actualFrame->datalen - frame_trailer_size - iv_len;
             iv = allocate_memory(iv_len);
@@ -2943,8 +2942,8 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
                 return; // Memory allocation failed
             }
             copy_frame_iv(actualFrame->data, iv_start, iv_len, iv);
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV: ");
-            log_bytes(iv, iv_len);
+            // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV: ");
+            // log_bytes(iv, iv_len);
 
         	/*Get IV*/
             payload_length = actualFrame->datalen - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size);
@@ -2962,32 +2961,40 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
             log_bytes(decrypted_payload, 5);
 
             // Allocate decrypted_frame based on len_unencrypted_bytes + plaintext_len
-            decrypted_frame = allocate_memory(len_unencrypted_bytes + plaintext_len);
+            decrypted_frame = allocate_memory(freeswitch_trailer_size+ len_unencrypted_bytes + plaintext_len);
 
             if (decrypted_frame != NULL) {
                 // Copy frame_header of unencrypted bytes to decrypted_frame
                 memcpy(decrypted_frame, frame_header, len_unencrypted_bytes);
 
                 // Copy decrypted result to frame_data after unecrypted bytes
-                memcpy(decrypted_frame + len_unencrypted_bytes, decrypted_payload, plaintext_len);
+                memcpy(decrypted_frame  + len_unencrypted_bytes, decrypted_payload, plaintext_len);
 
-				// Copy new decrypted frame to frame data
-				// for (size_t i = 0; i < len_unencrypted_bytes + plaintext_len; ++i) {
-				// 	// Cast void pointers to uint8_t pointers before accessing them
-				// 	((uint8_t *)actualFrame->data)[i] = ((uint8_t *)decrypted_frame)[i];
+				//if audio type
+				// if (type == SWITCH_MEDIA_TYPE_AUDIO) {
+				// 	// Copy new decrypted frame to frame data
+				// 	for (size_t i = freeswitch_trailer_size; i < freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len; ++i) {
+				// 		// Cast void pointers to uint8_t pointers before accessing them
+				// 		((uint8_t *)actualFrame->data)[i] = ((uint8_t *)decrypted_frame)[i];
+				// 	}
+				// 	for (size_t i = len_unencrypted_bytes + plaintext_len; i < actualFrame->datalen; ++i) {
+				// 		((uint8_t *)actualFrame->data)[i] = 128;
+				// 	}
+				// 	// Update datalen of actualFrame
+				// 	actualFrame->datalen = freeswitch_trailer_size+len_unencrypted_bytes + plaintext_len;
+				// } else {
+				// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for decrypted frame\n");
 				// }
-
-				// //Delete the rest of frame
-				// for (size_t i = len_unencrypted_bytes + plaintext_len; i < actualFrame->datalen; ++i) {
-				// 	((uint8_t *)actualFrame->data)[i] = 128;
-				// }
-
-				// Update datalen of actualFrame
-				// actualFrame->datalen = len_unencrypted_bytes + plaintext_len;
-            } else {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for decrypted frame\n");
-            }
-        }
+				
+				
+				//Free memory
+				free(payload);
+				free(decrypted_frame);
+			} else {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for decrypted frame\n");
+ 
+       		}
+		}
 
         // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "=========================\n");
 

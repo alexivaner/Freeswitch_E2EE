@@ -39,6 +39,7 @@
 #include <errno.h>
 #include <sofia-sip/sdp.h>
 #include <sofia-sip/su.h>
+#include <string.h>
 
 
 #include <stdbool.h>
@@ -2769,6 +2770,88 @@ static void check_media_timeout_params(switch_core_session_t *session, switch_rt
 
 // Function to copy frame trailer //TODO IVAN
 // Function to copy frame trailer
+
+static switch_status_t perform_write(switch_core_session_t *session, switch_frame_t *frame, switch_io_flag_t flags, int stream_id)
+{
+	switch_io_event_hook_write_frame_t *ptr;
+	switch_status_t status = SWITCH_STATUS_FALSE;
+	switch_media_handle_t *smh;
+
+	switch_assert(session != NULL);
+
+	if ((smh = session->media_handle)) {
+		switch_rtp_engine_t *a_engine = &smh->engines[SWITCH_MEDIA_TYPE_AUDIO];
+
+		if (a_engine && a_engine->write_fb && !(flags & SWITCH_IO_FLAG_QUEUED)) {
+			switch_frame_t *dupframe = NULL;
+
+			if (switch_frame_buffer_dup(a_engine->write_fb, frame, &dupframe) == SWITCH_STATUS_SUCCESS) {
+				switch_frame_buffer_push(a_engine->write_fb, dupframe);
+				dupframe = NULL;
+				return SWITCH_STATUS_SUCCESS;
+			}
+		}
+	}
+
+	if (session->bugs && !(frame->flags & SFF_NOT_AUDIO)) {
+		switch_media_bug_t *bp;
+		switch_bool_t ok = SWITCH_TRUE;
+		int prune = 0;
+
+		switch_thread_rwlock_rdlock(session->bug_rwlock);
+
+		for (bp = session->bugs; bp; bp = bp->next) {
+			ok = SWITCH_TRUE;
+
+			if (switch_core_media_bug_test_flag(bp, SMBF_PAUSE) || (switch_channel_test_flag(session->channel, CF_PAUSE_BUGS) && !switch_core_media_bug_test_flag(bp, SMBF_NO_PAUSE))) {
+				continue;
+			}
+
+			if (!switch_channel_test_flag(session->channel, CF_ANSWERED) && switch_core_media_bug_test_flag(bp, SMBF_ANSWER_REQ)) {
+				continue;
+			}
+			if (switch_test_flag(bp, SMBF_PRUNE)) {
+				prune++;
+				continue;
+			}
+
+			if (bp->ready) {
+				if (switch_test_flag(bp, SMBF_TAP_NATIVE_WRITE)) {
+					if (bp->callback) {
+						bp->native_write_frame = frame;
+						ok = bp->callback(bp, bp->user_data, SWITCH_ABC_TYPE_TAP_NATIVE_WRITE);
+						bp->native_write_frame = NULL;
+					}
+				}
+			}
+
+			if ((bp->stop_time && bp->stop_time <= switch_epoch_time_now(NULL)) || ok == SWITCH_FALSE) {
+				switch_set_flag(bp, SMBF_PRUNE);
+				prune++;
+			}
+		}
+		switch_thread_rwlock_unlock(session->bug_rwlock);
+
+		if (prune) {
+			switch_core_media_bug_prune(session);
+		}
+	}
+
+
+	if (session->endpoint_interface->io_routines->write_frame) {
+		if ((status = session->endpoint_interface->io_routines->write_frame(session, frame, flags, stream_id)) == SWITCH_STATUS_SUCCESS) {
+			for (ptr = session->event_hooks.write_frame; ptr; ptr = ptr->next) {
+				if ((status = ptr->write_frame(session, frame, flags, stream_id)) != SWITCH_STATUS_SUCCESS) {
+					break;
+				}
+			}
+		}
+	}
+
+	return status;
+}
+
+
 void copy_frame_trailer(const uint8_t *actual_frame_data, size_t actual_frame_size, size_t frame_trailer_size, uint8_t *frame_trailer) {
     // Calculate the starting position to copy from
     size_t start_index = (actual_frame_size > frame_trailer_size) ? (actual_frame_size - frame_trailer_size) : 0;
@@ -2882,9 +2965,8 @@ int decrypt(const uint8_t* key,
 
 
 // Function to decrypt the frame data
-void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
+void decrypt_frame(switch_core_session_t *session,switch_frame_t **frame,switch_io_flag_t flags, int stream_id, switch_media_type_t type, const uint8_t encryptionKey[]) {
     if (*frame) {
-        const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
         switch_frame_t *actualFrame = *frame;
         size_t frame_trailer_size = 4;
 		size_t freeswitch_trailer_size = 0;
@@ -2900,6 +2982,7 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
         uint8_t decrypted_payload[20000];
         int plaintext_len = 0;
         uint8_t *decrypted_frame = NULL;
+		switch_frame_t *decrypted_frame_struct = switch_core_alloc(session->pool, sizeof(switch_frame_t));
 
        
         /*Get 4 bytes of frame trailer, frame trailer contains 2 bytes of IV size and two bytes of IV checksum*/
@@ -2970,23 +3053,18 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
                 // Copy decrypted result to frame_data after unecrypted bytes
                 memcpy(decrypted_frame  + len_unencrypted_bytes, decrypted_payload, plaintext_len);
 
-				//if audio type
-				// if (type == SWITCH_MEDIA_TYPE_AUDIO) {
-				// 	// Copy new decrypted frame to frame data
-				// 	for (size_t i = freeswitch_trailer_size; i < freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len; ++i) {
-				// 		// Cast void pointers to uint8_t pointers before accessing them
-				// 		((uint8_t *)actualFrame->data)[i] = ((uint8_t *)decrypted_frame)[i];
-				// 	}
-				// 	for (size_t i = len_unencrypted_bytes + plaintext_len; i < actualFrame->datalen; ++i) {
-				// 		((uint8_t *)actualFrame->data)[i] = 128;
-				// 	}
-				// 	// Update datalen of actualFrame
-				// 	actualFrame->datalen = freeswitch_trailer_size+len_unencrypted_bytes + plaintext_len;
-				// } else {
-				// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for decrypted frame\n");
-				// }
-				
-				
+				//TODO: Write decrypted_frame to session
+
+				if (decrypted_frame_struct) {
+					// Populate the decrypted frame structure
+					decrypted_frame_struct->data = decrypted_frame; // Assuming decrypted_frame is the decrypted payload
+					decrypted_frame_struct->datalen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len;
+
+					// Pass a pointer to the decrypted frame structure to perform_write function
+					perform_write(session, decrypted_frame_struct, SWITCH_IO_FLAG_QUEUED, stream_id);
+				} else {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for decrypted frame structure\n");
+				}				
 				//Free memory
 				free(payload);
 				free(decrypted_frame);
@@ -2995,8 +3073,6 @@ void decrypt_frame(switch_frame_t **frame, switch_media_type_t type) {
  
        		}
 		}
-
-        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "=========================\n");
 
         free(frame_header);
         free(iv);
@@ -3013,6 +3089,11 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	switch_media_handle_t *smh;
 	int do_cng = 0;
 
+	//TODO: Ivan - Modify getting encryption key here
+	const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	//Get channel name
+	const char *channel_name = switch_channel_get_name(channel);
 	
 	switch_assert(session);
 
@@ -3541,7 +3622,23 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 
 
 	//TODO: MODIFIED BY IVAN
-	decrypt_frame(frame, type);
+	if (channel_name == NULL) {
+		// Handle the case where channel_name is NULL
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Channel name is NULL.\n");
+	} else {
+		// Log channel name
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Channel: %s\n", channel_name);
+		
+		// Check if "sofia/internal/1019" is included in channel_name
+		if (strstr(channel_name, "sofia/internal/1019") != NULL) {
+			// Encrypt the frame
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Will encrypt here\n");
+		} else {
+			// Decrypt the frame
+			decrypt_frame(session, frame, flags, stream_id, type, encryptionKey);
+		}
+	}
+
 
 	status = SWITCH_STATUS_SUCCESS;
 
@@ -7331,86 +7428,6 @@ SWITCH_DECLARE(void) switch_core_autobind_cpu(void)
 	if (video_globals.cpu_count > 1) {
 		switch_core_thread_set_cpu_affinity(next_cpu());
 	}
-}
-
-static switch_status_t perform_write(switch_core_session_t *session, switch_frame_t *frame, switch_io_flag_t flags, int stream_id)
-{
-	switch_io_event_hook_write_frame_t *ptr;
-	switch_status_t status = SWITCH_STATUS_FALSE;
-	switch_media_handle_t *smh;
-
-	switch_assert(session != NULL);
-
-	if ((smh = session->media_handle)) {
-		switch_rtp_engine_t *a_engine = &smh->engines[SWITCH_MEDIA_TYPE_AUDIO];
-
-		if (a_engine && a_engine->write_fb && !(flags & SWITCH_IO_FLAG_QUEUED)) {
-			switch_frame_t *dupframe = NULL;
-
-			if (switch_frame_buffer_dup(a_engine->write_fb, frame, &dupframe) == SWITCH_STATUS_SUCCESS) {
-				switch_frame_buffer_push(a_engine->write_fb, dupframe);
-				dupframe = NULL;
-				return SWITCH_STATUS_SUCCESS;
-			}
-		}
-	}
-
-	if (session->bugs && !(frame->flags & SFF_NOT_AUDIO)) {
-		switch_media_bug_t *bp;
-		switch_bool_t ok = SWITCH_TRUE;
-		int prune = 0;
-
-		switch_thread_rwlock_rdlock(session->bug_rwlock);
-
-		for (bp = session->bugs; bp; bp = bp->next) {
-			ok = SWITCH_TRUE;
-
-			if (switch_core_media_bug_test_flag(bp, SMBF_PAUSE) || (switch_channel_test_flag(session->channel, CF_PAUSE_BUGS) && !switch_core_media_bug_test_flag(bp, SMBF_NO_PAUSE))) {
-				continue;
-			}
-
-			if (!switch_channel_test_flag(session->channel, CF_ANSWERED) && switch_core_media_bug_test_flag(bp, SMBF_ANSWER_REQ)) {
-				continue;
-			}
-			if (switch_test_flag(bp, SMBF_PRUNE)) {
-				prune++;
-				continue;
-			}
-
-			if (bp->ready) {
-				if (switch_test_flag(bp, SMBF_TAP_NATIVE_WRITE)) {
-					if (bp->callback) {
-						bp->native_write_frame = frame;
-						ok = bp->callback(bp, bp->user_data, SWITCH_ABC_TYPE_TAP_NATIVE_WRITE);
-						bp->native_write_frame = NULL;
-					}
-				}
-			}
-
-			if ((bp->stop_time && bp->stop_time <= switch_epoch_time_now(NULL)) || ok == SWITCH_FALSE) {
-				switch_set_flag(bp, SMBF_PRUNE);
-				prune++;
-			}
-		}
-		switch_thread_rwlock_unlock(session->bug_rwlock);
-
-		if (prune) {
-			switch_core_media_bug_prune(session);
-		}
-	}
-
-
-	if (session->endpoint_interface->io_routines->write_frame) {
-		if ((status = session->endpoint_interface->io_routines->write_frame(session, frame, flags, stream_id)) == SWITCH_STATUS_SUCCESS) {
-			for (ptr = session->event_hooks.write_frame; ptr; ptr = ptr->next) {
-				if ((status = ptr->write_frame(session, frame, flags, stream_id)) != SWITCH_STATUS_SUCCESS) {
-					break;
-				}
-			}
-		}
-	}
-
-	return status;
 }
 
 
@@ -16140,7 +16157,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 
 			if ((switch_test_flag(frame->codec, SWITCH_CODEC_FLAG_PASSTHROUGH) || switch_test_flag(session->read_codec, SWITCH_CODEC_FLAG_PASSTHROUGH)) ||
 				switch_channel_test_flag(session->channel, CF_PASSTHRU_PTIME_MISMATCH)) {
-				status = perform_write(session, frame, flags, stream_id);
+				status = perform_write(session, frame, flags, 1);
 				goto error;
 			}
 

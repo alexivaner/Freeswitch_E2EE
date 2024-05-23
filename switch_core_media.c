@@ -2977,31 +2977,31 @@ int decrypt(const uint8_t* key,
 
   // Create and initialize the cipher context
   if (!(ctx = EVP_CIPHER_CTX_new())) {
-    printf("Error in Decryption 100\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Error in Decryption 100\n");
     return -1;
   }
 
   // Initialize the decryption operation with the cipher type and mode
   if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL)) {
-    printf("Error in Decryption 200\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Error in Decryption 200\n");
     return -1;
   }
 
   // Set key and IV
   if (!EVP_DecryptInit_ex(ctx, NULL, NULL, (const unsigned char *)key, iv)) {
-    printf("Error in Decryption 300\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Error in Decryption 300\n");
     return -1;
   }
 
   // Provide frame header as Additional Authenticated Data (AAD)
   if (1 != EVP_DecryptUpdate(ctx, NULL, &len, frame_header, len_unencrypted_bytes)) {
-    printf("Error in Decryption 400\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Error in Decryption 400\n");
     return -1;
   }
 
   // Decrypt payload
   if (1 != EVP_DecryptUpdate(ctx, decrypted_payload, &len, payload, tag_offset)) {
-    printf("Error in Decryption 500\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Error in Decryption 500\n");
     return -1;
   }
 
@@ -3009,7 +3009,7 @@ int decrypt(const uint8_t* key,
 
   // Set the expected tag value
   if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, (void *)(payload + tag_offset))) {
-    printf("Error in Decryption 600\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Error in Decryption 600\n");
     return -1;
   }
 
@@ -3116,16 +3116,19 @@ void decrypt_frame(switch_core_session_t *session, switch_frame_t **frame, switc
         /*Get IV len*/
         iv_len = frame_trailer[0];
         if (iv_len != 12) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV length is not 12 bytes\n");
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV length is not 12 bytes and frame datalen is %d\n", actualFrame->datalen);
+			//log first 5 frame
+			log_bytes(actualFrame->data, 20);
+			return;
         } else {
 
 			if (type == SWITCH_MEDIA_TYPE_AUDIO) {
-				len_unencrypted_bytes = 1;
+				len_unencrypted_bytes = 12;
 				freeswitch_trailer_size = 0;
 			}
 
 			if (type == SWITCH_MEDIA_TYPE_VIDEO) {
-				len_unencrypted_bytes = 10;
+				len_unencrypted_bytes = 12;
 				freeswitch_trailer_size = 4;
 			}
 
@@ -3166,7 +3169,7 @@ void decrypt_frame(switch_core_session_t *session, switch_frame_t **frame, switc
             // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decrypted Payload length: %d\n", plaintext_len);
             // log_bytes(decrypted_payload, 5);
 
-			if (type == SWITCH_MEDIA_TYPE_AUDIO) {
+			if (type == SWITCH_MEDIA_TYPE_VIDEO) {
 				//Log first 50 bytes of actualFrame data
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual Frame data: ");
 				log_bytes(actualFrame->data, 50);
@@ -3199,7 +3202,7 @@ void decrypt_frame(switch_core_session_t *session, switch_frame_t **frame, switc
 				memcpy(decrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes, decrypted_payload, plaintext_len);
 
 				// Clear any remaining part of the original frame data to avoid leftover data causing noise
-				memset(actualFrame->data, 0, actualFrame->buflen);
+				memset(actualFrame->data, 0xFF, actualFrame->buflen);
 
 				// Replace the original frame data with the decrypted frame data
 				memcpy(actualFrame->data, decrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len);
@@ -3234,12 +3237,12 @@ void encrypt_frame(switch_core_session_t *session, switch_frame_t **frame, switc
         size_t iv_size = 12;
 
         if (type == SWITCH_MEDIA_TYPE_AUDIO) {
-            len_unencrypted_bytes = 1;
+            len_unencrypted_bytes = 12;
             freeswitch_trailer_size = 0;
         }
 
         if (type == SWITCH_MEDIA_TYPE_VIDEO) {
-            len_unencrypted_bytes = 10;
+            len_unencrypted_bytes = 12;
             freeswitch_trailer_size = 4;
         }
 
@@ -3326,64 +3329,6 @@ void encrypt_frame(switch_core_session_t *session, switch_frame_t **frame, switc
 }
 
 
-// static switch_bool_t bug_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type) {
-//     // Log the type
-//     uint8_t data[SWITCH_RECOMMENDED_BUFFER_SIZE];
-// 	uint8_t *data_ptr;  // Declare the variable at the beginning
-//     switch_frame_t bugFrame = {0};
-//     bugFrame.data = data;
-//     bugFrame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
-
-//     switch (type) {
-//         case SWITCH_ABC_TYPE_INIT:
-//             {
-//                 // Initialization code
-//             }
-//             break;
-//         case SWITCH_ABC_TYPE_READ:
-//             {
-            
-//             }
-//             break;
-//         case SWITCH_ABC_TYPE_WRITE:
-//             {
-//                 // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan callback Type: SWITCH_ABC_TYPE_WRITE\n");
-// 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan callback Type: SWITCH_ABC_TYPE_WRITE\n");
-//                 while (switch_core_media_bug_read(bug, &bugFrame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
-//                     if (bugFrame.datalen) {
-//                         // Log the last 16 bytes of frame
-//                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last 16 bytes of frame: ");
-//                         data_ptr = (uint8_t *)bugFrame.data;  // Cast to uint8_t *
-//                         for (size_t i = 0; i < 16; ++i) {
-//                             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u ", data_ptr[bugFrame.datalen - 16 + i]);
-//                         }
-//                     }
-//                 }
-//             }
-//             break;
-//         case SWITCH_ABC_TYPE_CLOSE:
-//             {
-//                 // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan callback Type: SWITCH_ABC_TYPE_CLOSE\n");
-//             }
-//             break;
-//         case SWITCH_ABC_TYPE_READ_VIDEO_PING:
-//             {
-//                 // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan callback Type: SWITCH_ABC_TYPE_READ_VIDEO_PING\n");
-//             }
-//             break;
-//         case SWITCH_ABC_TYPE_VIDEO_PATCH:
-//             {
-//                 // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan callback Type: SWITCH_ABC_TYPE_VIDEO_PATCH\n");
-//             }
-//             break;
-//         default:
-//             break;
-//     }
-//     return SWITCH_TRUE;
-// }
-
-
-
 SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session_t *session, switch_frame_t **frame,
 															 switch_io_flag_t flags, int stream_id, switch_media_type_t type)
 {
@@ -3398,14 +3343,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	//Get channel name
 	const char *channel_name = switch_channel_get_name(channel);
-	// switch_media_bug_t *bug;
-	// switch_status_t bugStatus;
-	// void *pUserData = NULL;
-
-	// if((bugStatus = switch_core_media_bug_add(session,"audio_video",NULL,bug_callback,pUserData, 0, flags,&bug))!=SWITCH_STATUS_SUCCESS){
-	// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to add media bug\n");
-	// 	return bugStatus;
-	// }
 	//TODO: Ivan - End of modification
 
 
@@ -3483,11 +3420,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 			goto end;
 		}
 
-		// TODO IVAN 
-		if (strstr(channel_name, "sofia/internal/1018") != NULL) {
-			decrypt_frame(session, frame, flags, stream_id, type, encryptionKey);
-		}
-		//TODO End of modification
+
 
 
 		if (type == SWITCH_MEDIA_TYPE_VIDEO) {
@@ -3506,6 +3439,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 				}
 			}
 		}
+
 
 		/* re-set codec if necessary */
 		if (type != SWITCH_MEDIA_TYPE_TEXT && engine->reset_codec > 0) {
@@ -3585,6 +3519,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		}
 
 
+
 		/* Try to read an RTCP frame, if successful raise an event */
 		if (switch_rtcp_zerocopy_read_frame(engine->rtp_session, &rtcp_frame) == SWITCH_STATUS_SUCCESS) {
 			switch_event_t *event;
@@ -3661,6 +3596,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG10, "Dispatched RTCP event\n");
 			}
 		}
+
 
 		/* Fast PASS! */
 		if (switch_test_flag((&engine->read_frame), SFF_PROXY_PACKET)) {
@@ -3875,6 +3811,9 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		}
 	}
 
+
+
+
 	if (engine->read_frame.datalen == 0) {
 		*frame = NULL;
 	}
@@ -3939,28 +3878,19 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 
 	} else {
 		*frame = &engine->read_frame;
+		// //TODO: MODIFIED BY IVAN
+
+		// // Encrypt the frame before sending it out
+		// if (strstr(channel_name, "sofia/internal/1019") != NULL) {
+		// 	encrypt_frame(session, frame, flags, stream_id, type, encryptionKey);
+		// }
+		// //TODO: End modification
+		// // TODO IVAN 
+		if (strstr(channel_name, "sofia/internal/1018") != NULL) {
+			decrypt_frame(session, frame, flags, stream_id, type, encryptionKey);
+		}
+		// //TODO End of modification
 	}
-
-
-	// //TODO: MODIFIED BY IVAN
-	// if (channel_name == NULL) {
-	// 	// Handle the case where channel_name is NULL
-	// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Channel name is NULL.\n");
-	// } else {
-	// 	// Log channel name
-	// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Channel: %s\n", channel_name);
-		
-	// 	// Check if "sofia/internal/1019" is included in channel_name
-	// 	if (strstr(channel_name, "sofia/internal/1019") != NULL) {
-	// 		// Encrypt the frame
-	// 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Will encrypt here\n");
-	// 		encrypt_frame(session, frame, flags, stream_id, type, encryptionKey);
-	// 	} else {
-	// 		// Decrypt the frame
-	// 		decrypt_frame(session, frame, flags, stream_id, type, encryptionKey);
-	// 	}
-	// }
-
 
 	status = SWITCH_STATUS_SUCCESS;
 
@@ -3970,13 +3900,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		switch_mutex_unlock(smh->read_mutex[type]);
 	}
 
-	//TODO: MODIFIED BY IVAN
-
-	// Encrypt the frame before sending it out
-	if (strstr(channel_name, "sofia/internal/1019") != NULL) {
-		encrypt_frame(session, frame, flags, stream_id, type, encryptionKey);
-	}
-	//TODO: End modification
 
 	return status;
 }
@@ -4040,10 +3963,15 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 				frames = 1;
 
 			samples = frames * engine->read_impl.samples_per_packet;
+			
 		}
 	}
 
 	engine->timestamp_send += samples;
+
+	//TODO: IVAN
+	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "switch_core_media_write_frame: ");
+	//TODO END
 
 	if (switch_rtp_write_frame(engine->rtp_session, frame) < 0) {
 		status = SWITCH_STATUS_FALSE;

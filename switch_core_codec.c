@@ -36,7 +36,32 @@
 #include <switch.h>
 #include "private/switch_core_pvt.h"
 
+//TODO IVAN
+#include <openssl/bio.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
+
+#define MT_N 624
+#define MT_M 397
+#define MT_MATRIX_A 0x9908b0df
+#define MT_UPPER_MASK 0x80000000
+#define MT_LOWER_MASK 0x7fffffff
+//TODO End Ivan
+
 static uint32_t CODEC_ID = 1;
+
+//TODO IVAN
+typedef struct {
+    uint8_t *data;
+    size_t datalen;
+    size_t buflen;
+} temporary_frame_t;
+static uint32_t mt[MT_N];
+static int mti = MT_N + 1;
+// static temporary_frame_t temp_frame = {NULL, 0, 0};
+// static temporary_frame_t temp_h264_header = {NULL, 0, 0};
+//TODO End IVAN
+
 
 SWITCH_DECLARE(uint32_t) switch_core_codec_next_id(void)
 {
@@ -740,6 +765,240 @@ SWITCH_DECLARE(switch_status_t) switch_core_codec_init_with_bitrate(switch_codec
 	return SWITCH_STATUS_NOTIMPL;
 }
 
+//TODO IVAN ADD ENCRYPTION
+void init_genrand_encrypt(uint32_t seed) {
+    mt[0] = seed;
+    for (mti = 1; mti < MT_N; mti++) {
+        mt[mti] = (1812433253UL * (mt[mti - 1] ^ (mt[mti - 1] >> 30)) + mti);
+    }
+}
+
+// uint8_t mersenne_engine() {
+//     uint32_t y;
+
+//     if (mti >= MT_N) {
+//         int kk;
+
+//         if (mti == MT_N + 1) {
+//             init_genrand_encrypt(5489UL); // Default seed
+//         }
+
+//         for (kk = 0; kk < MT_N - MT_M; kk++) {
+//             y = (mt[kk] & MT_UPPER_MASK) | (mt[kk + 1] & MT_LOWER_MASK);
+//             mt[kk] = mt[kk + MT_M] ^ (y >> 1) ^ (-(int32_t)(y & 0x1UL) & MT_MATRIX_A);
+//         }
+//         for (; kk < MT_N - 1; kk++) {
+//             y = (mt[kk] & MT_UPPER_MASK) | (mt[kk + 1] & MT_LOWER_MASK);
+//             mt[kk] = mt[kk + (MT_M - MT_N)] ^ (y >> 1) ^ (-(int32_t)(y & 0x1UL) & MT_MATRIX_A);
+//         }
+//         y = (mt[MT_N - 1] & MT_UPPER_MASK) | (mt[0] & MT_LOWER_MASK);
+//         mt[MT_N - 1] = mt[MT_M - 1] ^ (y >> 1) ^ (-(int32_t)(y & 0x1UL) & MT_MATRIX_A);
+
+//         mti = 0;
+//     }
+
+//     y = mt[mti++];
+//     y ^= (y >> 11);
+//     y ^= (y << 7) & 0x9d2c5680UL;
+//     y ^= (y << 15) & 0xefc60000UL;
+//     y ^= (y >> 18);
+
+//     return (uint8_t)(y & 0xFF);
+// }
+
+void shuffle_encrypt(uint8_t *array, size_t n) {
+    if (n > 1) {
+        size_t i;
+        for (i = 0; i < n - 1; i++) {
+            size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
+            uint8_t t = array[j];
+            array[j] = array[i];
+            array[i] = t;
+        }
+    }
+}
+
+
+void copy_frame_payload_encrypt(const uint8_t *actual_frame_data, size_t payload_start, size_t payload_len, uint8_t *payload) {
+	// Copy data
+	for (size_t i = 0; i < payload_len; ++i) {
+		payload[i] = actual_frame_data[payload_start + i];
+	}
+}
+
+void copy_frame_header_encrypt(const uint8_t *actual_frame_data, size_t len_unencrypted_bytes, size_t freeswitch_trailer_size, uint8_t *frame_header) {
+	// Copy data
+	for (size_t i = 0; i < len_unencrypted_bytes; ++i) {
+		frame_header[i] = actual_frame_data[i+ freeswitch_trailer_size];
+	}
+}
+
+// Function to log bytes
+void log_bytes_encrypt(const uint8_t *bytes, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u ", bytes[i]);
+    }
+}
+
+// Function to allocate memory
+uint8_t* allocate_memory_encrypt(size_t size) {
+    uint8_t *ptr = malloc(size * sizeof(uint8_t));
+    if (ptr == NULL) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed\n");
+    }
+    return ptr;
+}
+
+int encrypt_after_codec(const uint8_t* key,
+            const uint8_t* plaintext,
+            int plaintext_len,
+            const uint8_t* iv,
+            const uint8_t* aad,
+            int aad_len,
+            uint8_t* ciphertext) {
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int ciphertext_len;
+    size_t tag_size = 16;
+    uint8_t* tag = malloc(tag_size);
+
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
+        printf("Error in Encryption 1\n");
+        return -1;
+    }
+
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL)) {
+        printf("Error in Encryption 2\n");
+        return -1;
+    }
+
+    if (1 != EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv)) {
+        printf("Error in Encryption 3\n");
+        return -1;
+    }
+
+    EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len);
+
+    if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)) {
+        printf("Error in Encryption 4\n");
+        return -1;
+    }
+
+    ciphertext_len = len;
+
+    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
+        printf("Error in Encryption 5\n");
+        return -1;
+    }
+
+    if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag)) {
+        printf("Error in Encryption 6\n");
+        return -1;
+    }
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    for (size_t i = 0; i < 16; i++) {
+        ciphertext[ciphertext_len + i] = tag[i];
+    }
+
+    ciphertext_len += 16;
+
+    free(tag);
+
+    return ciphertext_len;
+}
+
+
+void encrypt_frame_after_codec(switch_frame_t *frame, const uint8_t encryptionKey[]) {
+    if (frame) {
+        uint8_t iv[12];
+        uint8_t *frame_header = NULL;
+        uint8_t *payload = NULL;
+        uint8_t *encrypted_frame = NULL;
+        uint8_t encrypted_payload[200000];
+        size_t len_unencrypted_bytes = 0;
+        size_t frame_trailer_size = 4;
+        int encrypted_len = 0;
+        size_t freeswitch_trailer_size = 0;
+        size_t payload_length = 0;
+        size_t sums_of_iv = 0;
+        size_t iv_start = 0;
+        size_t iv_size = 12;
+
+        len_unencrypted_bytes = 1;
+        freeswitch_trailer_size = 0;
+
+        frame_header = allocate_memory_encrypt(len_unencrypted_bytes);
+        if (frame_header == NULL) {
+            return; // Memory allocation failed
+        }
+
+        // Copy unencrypted bytes to frame_header
+        copy_frame_header_encrypt(frame->data, len_unencrypted_bytes, freeswitch_trailer_size, frame_header);
+
+        // Copy the rest of data to payload
+        payload_length = frame->datalen - len_unencrypted_bytes;
+        payload = allocate_memory_encrypt(payload_length);
+        if (payload == NULL) {
+            free(frame_header);
+            return; // Memory allocation failed
+        }
+        copy_frame_payload_encrypt(frame->data, len_unencrypted_bytes, payload_length, payload);
+
+        // Fill IV with dummy 68
+        for (size_t i = 0; i < iv_size; ++i) {
+            iv[i] = 68;
+        }
+
+        // Encrypt the frame
+        encrypted_len = encrypt_after_codec(encryptionKey, payload, payload_length, iv, frame_header, len_unencrypted_bytes, encrypted_payload);
+
+        // Allocate memory for the new encrypted frame
+        encrypted_frame = allocate_memory_encrypt(freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len + iv_size + frame_trailer_size);
+        if (encrypted_frame == NULL) {
+            free(frame_header);
+            free(payload);
+            return; // Memory allocation failed
+        }
+
+        // Copy freeswitch trailer frame
+        memcpy(encrypted_frame, frame->data, freeswitch_trailer_size);
+        // Copy unencrypted bytes to encrypted_frame
+        memcpy(encrypted_frame + freeswitch_trailer_size, frame_header, len_unencrypted_bytes);
+        // Copy encrypted_payload to encrypted_frame
+        memcpy(encrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes, encrypted_payload, encrypted_len);
+
+        iv_start = freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len;
+        // Copy iv to encrypted_frame
+        memcpy(encrypted_frame + iv_start, iv, iv_size);
+        // Put the size of IV in the frame trailer
+        encrypted_frame[iv_start + iv_size] = iv_size;
+        // Put the size of checksum for IV element at the end of frame trailer
+        for (size_t i = 0; i < iv_size; ++i) {
+            sums_of_iv += iv[i];
+        }
+        encrypted_frame[iv_start + iv_size + 2] = (sums_of_iv >> 8) & 0xFF;
+        encrypted_frame[iv_start + iv_size + 3] = sums_of_iv & 0xFF;
+
+        // Clear any remaining part of the original frame data to avoid leftover data causing noise
+        memset(frame->data, 0, frame->buflen);
+
+        // Replace the original frame data with the encrypted frame data
+        memcpy(frame->data, encrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len + iv_size + frame_trailer_size);
+        frame->datalen = freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len + iv_size + frame_trailer_size;
+        frame->buflen = freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len + iv_size + frame_trailer_size;
+
+        // Free allocated memory
+        free(encrypted_frame);
+        free(frame_header);
+        free(payload);
+    }
+}
+
+
+// TODO IVAN END OF MODIFICATION
+
 SWITCH_DECLARE(switch_status_t) switch_core_codec_encode(switch_codec_t *codec,
 														 switch_codec_t *other_codec,
 														 void *decoded_data,
@@ -767,6 +1026,16 @@ SWITCH_DECLARE(switch_status_t) switch_core_codec_encode(switch_codec_t *codec,
 	status = codec->implementation->encode(codec, other_codec, decoded_data, decoded_data_len,
 										   decoded_rate, encoded_data, encoded_data_len, encoded_rate, flag);
 	if (codec->mutex) switch_mutex_unlock(codec->mutex);
+
+
+	//TODO IVAN 
+    // // Add encryption logic here
+    // if (status == SWITCH_STATUS_SUCCESS) {
+    //     const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+    //     switch_frame_t *encoded_frame = (switch_frame_t *)encoded_data;
+    //     encrypt_frame_after_codec(encoded_frame, encryptionKey);
+    // }
+	//TODO End TODO IVAN
 
 	return status;
 

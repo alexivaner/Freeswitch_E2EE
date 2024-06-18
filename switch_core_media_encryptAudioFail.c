@@ -43,7 +43,6 @@
 
 
 #include <stdbool.h>
-
 //TODO IVAN
 #include <openssl/bio.h>
 #include <openssl/evp.h>
@@ -55,7 +54,6 @@
 #define MT_UPPER_MASK 0x80000000
 #define MT_LOWER_MASK 0x7fffffff
 //TODO End Ivan
-
 
 static switch_t38_options_t * switch_core_media_process_udptl(switch_core_session_t *session, sdp_session_t *sdp, sdp_media_t *m);
 static void switch_core_media_set_r_sdp_codec_string(switch_core_session_t *session, const char *codec_string, sdp_session_t *sdp, switch_sdp_type_t sdp_type);
@@ -90,9 +88,6 @@ typedef struct core_video_globals_s {
 } core_video_globals_t;
 
 static core_video_globals_t video_globals = { 0 };
-
-
-
 //TODO IVAN
 typedef struct {
     uint8_t *data;
@@ -106,7 +101,6 @@ static temporary_frame_t temp_h264_headerDec = {NULL, 0, 0};
 static temporary_frame_t temp_frameEnc = {NULL, 0, 0};
 static temporary_frame_t temp_h264_headerEnc = {NULL, 0, 0};
 //TODO End IVAN
-
 struct media_helper {
 	switch_core_session_t *session;
 	switch_thread_cond_t *cond;
@@ -744,7 +738,7 @@ SWITCH_DECLARE(payload_map_t *) switch_core_media_add_payload_map(switch_core_se
 
 	for (pmap = engine->payload_map; pmap && pmap->allocated; pmap = pmap->next) {
 
-		if (sdp_type == SDP_TYPE_RESPONSE) {
+		if (sdp_type == SDP_ANSWER) {
 			switch(type) {
 			case SWITCH_MEDIA_TYPE_TEXT:
 				exists = (type == pmap->type && !strcasecmp(name, pmap->iananame));
@@ -753,11 +747,11 @@ SWITCH_DECLARE(payload_map_t *) switch_core_media_add_payload_map(switch_core_se
 				exists = (type == pmap->type && !strcasecmp(name, pmap->iananame) && pmap->pt == pt && (!pmap->rate || rate == pmap->rate) && (!pmap->ptime || pmap->ptime == ptime));
 				break;
 			case SWITCH_MEDIA_TYPE_VIDEO:
-				exists = (pmap->sdp_type == SDP_TYPE_REQUEST && type == pmap->type && !strcasecmp(name, pmap->iananame));
+				exists = (pmap->sdp_type == SDP_OFFER && type == pmap->type && !strcasecmp(name, pmap->iananame));
 
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG1, "CHECK PMAP %s:%s %d %s:%s %d ... %d\n", 
 								  name, "RES", pt,
-								  pmap->iananame, pmap->sdp_type == SDP_TYPE_REQUEST ? "REQ" : "RES", pmap->pt, exists);
+								  pmap->iananame, pmap->sdp_type == SDP_OFFER ? "REQ" : "RES", pmap->pt, exists);
 								  
 
 				break;
@@ -828,7 +822,7 @@ SWITCH_DECLARE(payload_map_t *) switch_core_media_add_payload_map(switch_core_se
 	}
 
 	if (!zstr(fmtp)) {
-		if (sdp_type == SDP_TYPE_REQUEST || !exists) {
+		if (sdp_type == SDP_OFFER || !exists) {
 			pmap->rm_fmtp = switch_core_strdup(session->pool, fmtp);
 		}
 	}
@@ -838,7 +832,7 @@ SWITCH_DECLARE(payload_map_t *) switch_core_media_add_payload_map(switch_core_se
 	pmap->recv_pt = (switch_payload_t) pt;
 
 
-	if (sdp_type == SDP_TYPE_REQUEST || !exists) {
+	if (sdp_type == SDP_OFFER || !exists) {
 		pmap->pt = (switch_payload_t) pt;
 	}
 
@@ -849,7 +843,7 @@ SWITCH_DECLARE(payload_map_t *) switch_core_media_add_payload_map(switch_core_se
 	if (!exists) {
 		pmap->sdp_type = sdp_type;
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG1, "ADD PMAP %s %s %d\n", sdp_type == SDP_TYPE_REQUEST ? "REQ" : "RES", name, pt);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG1, "ADD PMAP %s %s %d\n", sdp_type == SDP_OFFER ? "REQ" : "RES", name, pt);
 
 		if (pmap == engine->payload_map) {
 			engine->pmap_tail = pmap;
@@ -1755,7 +1749,7 @@ SWITCH_DECLARE(int) switch_core_session_check_incoming_crypto(switch_core_sessio
 			const char *a = switch_stristr("AE", engine->ssec[engine->crypto_type].remote_crypto_key);
 			const char *b = switch_stristr("AE", crypto);
 
-			if (sdp_type == SDP_TYPE_REQUEST) {
+			if (sdp_type == SDP_OFFER) {
 				if (!vval) {
 					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Unsupported Crypto [%s]\n", crypto);
 					goto end;
@@ -2028,7 +2022,7 @@ SWITCH_DECLARE(switch_status_t) switch_media_handle_create(switch_media_handle_t
 	*smhp = NULL;
 
 	if (zstr(params->sdp_username)) {
-		params->sdp_username = "FreeSWITCH";
+		params->sdp_username = "iMedia2";
 	}
 
 
@@ -2790,7 +2784,6 @@ static void check_media_timeout_params(switch_core_session_t *session, switch_rt
 		}
 	}
 }
-
 // Function to copy frame trailer //TODO IVAN
 void init_genrand(uint32_t seed) {
     mt[0] = seed;
@@ -2875,19 +2868,6 @@ void copy_frame_header(const uint8_t *actual_frame_data, size_t len_unencrypted_
 	// Copy data
 	for (size_t i = 0; i < len_unencrypted_bytes; ++i) {
 		frame_header[i] = actual_frame_data[i+ freeswitch_trailer_size];
-	}
-}
-
-void copy_h264_frame_header(const uint8_t *actual_frame_data, size_t len_unencrypted_bytes, size_t freeswitch_trailer_size, size_t webrtc_shift_size, uint8_t *frame_header, bool is_start_frame) {
-	// Copy data
-	size_t j = webrtc_shift_size;
-	for (size_t i = 0; i < len_unencrypted_bytes - webrtc_shift_size; ++i) {
-		if(is_start_frame){
-			frame_header[j] = actual_frame_data[i+ freeswitch_trailer_size - 1];
-		}else{
-			frame_header[j] = actual_frame_data[i];
-		}
-		j = j+1;
 	}
 }
 
@@ -3055,6 +3035,7 @@ void decrypt_audio_frame(switch_core_session_t *session, switch_frame_t **frame,
         uint8_t *decrypted_frame = NULL;
 
         len_unencrypted_bytes = 1;
+        freeswitch_trailer_size = 0;
         
         /*Get 4 bytes of frame trailer, frame trailer contains 2 bytes of IV size and two bytes of IV checksum*/
         copy_frame_trailer(actualFrame->data, actualFrame->datalen, frame_trailer_size, frame_trailer);
@@ -3104,9 +3085,6 @@ void decrypt_audio_frame(switch_core_session_t *session, switch_frame_t **frame,
             // Decrypt the frame data
             plaintext_len = decrypt(encryptionKey, payload, payload_length, iv, frame_header, len_unencrypted_bytes, decrypted_payload);
 
-			//Log plaintext len decrypt
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Plaintext len: %d\n", plaintext_len);
-
             // If decryption was successful, replace the frame data
             if (plaintext_len > 0) {
                 // Allocate memory for the new decrypted frame
@@ -3145,23 +3123,13 @@ void decrypt_audio_frame(switch_core_session_t *session, switch_frame_t **frame,
     }
 }
 
-typedef enum {
-    FRAME_TYPE_INVALID,
-    FRAME_TYPE_START,
-    FRAME_TYPE_CONTINUE,
-    FRAME_TYPE_CLOSE
-} frame_type_t;
+// Helper function to check the frame header
+int is_start_frame(const uint8_t *frame_data) {
+    return (frame_data[0] == 144 && frame_data[1] == 128);
+}
 
-frame_type_t get_frame_type(const uint8_t *frame_data) {
-    if (frame_data[1] >= 100) {
-        return FRAME_TYPE_START;
-    } else if (frame_data[1] >= 65) {
-        return FRAME_TYPE_CLOSE;
-    } else if (frame_data[1] >= 1) {
-        return FRAME_TYPE_CONTINUE;
-    } else {
-        return FRAME_TYPE_INVALID;
-    }
+int is_continue_frame(const uint8_t *frame_data) {
+    return (frame_data[0] == 128 && frame_data[1] == 128);
 }
 
 
@@ -3207,9 +3175,9 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
     if (*frame && type == SWITCH_MEDIA_TYPE_VIDEO) {
         switch_frame_t *actualFrame = *frame;
         size_t frame_trailer_size = 4;
-		size_t webrtc_shift_size=5;
-        size_t freeswitch_trailer_size = 2;
+        size_t freeswitch_trailer_size = 4;
         uint8_t frame_trailer[frame_trailer_size];
+        uint8_t freeswitch_frame_trailer[freeswitch_trailer_size];
         size_t len_unencrypted_bytes = 12;
         uint8_t *frame_header = NULL;
         size_t iv_len = 0;
@@ -3225,28 +3193,18 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
         // New Data in continuous frame
         size_t new_datalen = 0;
         uint8_t *new_data = NULL;
-		size_t start_offset = 0;
-		size_t remaining_length = 0;
 
         // Get 4 bytes of frame trailer, frame trailer contains 2 bytes of IV size and two bytes of IV checksum
         copy_frame_trailer(actualFrame->data, actualFrame->datalen, frame_trailer_size, frame_trailer);
         // Get IV len
         iv_len = frame_trailer[0];
-		
-		//Log len of actual frame
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual Video Frame len: %d\n", actualFrame->datalen);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "First  5 frame of video: ");
-		log_bytes((uint8_t *)actualFrame->data, 5);
 
-
-        if (get_frame_type(actualFrame->data) == FRAME_TYPE_START) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Start Frame\n");
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual first 30 Video Start Frame data: ");
-			log_bytes((uint8_t *)actualFrame->data, 30);
+        if (is_start_frame(actualFrame->data)) {
+            // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Start Frame\n");
 
             // If iv len is not 12, it means that it needs to wait for continuous frame
             if (iv_len != 12) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in start frame is not 12\n");
+                // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in start frame is not 12\n");
                 // Store the temporary frame data
                 free_temporary_frame_dec(&temp_frameDec);
                 free_temp_h264_header_dec(&temp_h264_headerDec);
@@ -3277,28 +3235,15 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
 
                 return;
             } else {
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in start frame is 12: %zu\n", iv_len);
+                // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in start frame is 12\n");
                 frame_header = allocate_memory(len_unencrypted_bytes);
                 if (frame_header == NULL) {
                     return; // Memory allocation failed
                 }
 
-				//Copy 0 0 0 1 to first 4 of frame header, because of webrtc shift
-				frame_header[0] = 0;
-				frame_header[1] = 0;
-				frame_header[2] = 0;
-				frame_header[3] = 1;
-				frame_header[4] = 65;
-
-
                 // Copy after freeswitch_trailer_size until len_unencrypted_bytes
-                copy_h264_frame_header((uint8_t *)actualFrame->data, len_unencrypted_bytes, freeswitch_trailer_size, webrtc_shift_size, frame_header,true);
+                copy_frame_header((uint8_t *)actualFrame->data, len_unencrypted_bytes, freeswitch_trailer_size, frame_header);
 
-				//Show frame header
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header in start frame: ");
-				log_bytes(frame_header, len_unencrypted_bytes);
-
-				// Extract IV first
                 iv_start = actualFrame->datalen - frame_trailer_size - iv_len;
                 iv = allocate_memory(iv_len);
                 if (iv == NULL) {
@@ -3308,14 +3253,14 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                 copy_frame_iv((uint8_t *)actualFrame->data, iv_start, iv_len, iv);
 
                 // Get Payload
-                payload_length = actualFrame->datalen + webrtc_shift_size - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size)+ 1;
+                payload_length = actualFrame->datalen - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size);
                 payload = allocate_memory(payload_length);
                 if (payload == NULL) {
                     free(frame_header);
                     free(iv);
                     return; // Memory allocation failed
                 }
-                payload_start = len_unencrypted_bytes + freeswitch_trailer_size - webrtc_shift_size - 1;
+                payload_start = len_unencrypted_bytes + freeswitch_trailer_size;
                 copy_frame_payload((uint8_t *)actualFrame->data, payload_start, payload_length, payload);
 
 
@@ -3328,20 +3273,13 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                     return; // Memory allocation failed
                 }
 
-				//log payload length
-				// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Payload length in start frame: %zu\n", payload_length);
-
-				//log first 10 payload 
-				// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "First 10 payload in start frame: ");
-				// log_bytes(payload, 10);
-
                 // Decrypt the frame data
                 plaintext_len = decrypt(encryptionKey, payload, payload_length, iv, frame_header, len_unencrypted_bytes, decrypted_payload);
                 // If decryption was successful, replace the frame data
                 if (plaintext_len > 0) {
-                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Start Frame successful\n");
+                    // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Start Frame successful\n");
                     // Allocate memory for the new decrypted frame
-                    decrypted_frame = allocate_memory(freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size +1);
+                    decrypted_frame = allocate_memory(freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len);
                     if (decrypted_frame == NULL) {
                         free(frame_header);
                         free(iv);
@@ -3350,36 +3288,39 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                         return; // Memory allocation failed
                     }
 
-					//Copy freeswitch trailer
+                    // Copy frame header
                     memcpy(decrypted_frame, actualFrame->data, freeswitch_trailer_size);
-
-					// Copy frame header
-					memcpy(decrypted_frame + freeswitch_trailer_size, frame_header + webrtc_shift_size + 1, len_unencrypted_bytes -  webrtc_shift_size - 1);
+                    memcpy(decrypted_frame + freeswitch_trailer_size, frame_header, len_unencrypted_bytes);
 
                     // Copy decrypted payload
-                    memcpy(decrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes- webrtc_shift_size, decrypted_payload, plaintext_len);
+                    memcpy(decrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes, decrypted_payload, plaintext_len);
 
                     // Clear any remaining part of the original frame data to avoid leftover data causing noise
                     memset(actualFrame->data, 0xFF, actualFrame->buflen);
 					
 
                     // Replace the original frame data with the decrypted frame data
-                    memcpy(actualFrame->data, decrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len  - webrtc_shift_size);
-                    actualFrame->datalen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len  - webrtc_shift_size;
-                    actualFrame->buflen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len  - webrtc_shift_size;
-					actualFrame->packetlen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len  - webrtc_shift_size;
+                    memcpy(actualFrame->data, decrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len);
+                    actualFrame->datalen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len;
+                    actualFrame->buflen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len;
+					actualFrame->packetlen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len;
 
-					//Log first 10 decrypted_frame
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "decrypted_frame Start frame: ");
-					log_bytes(decrypted_frame, 10);
-					//Log decrypted_frame len
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "decrypted_frame Start frame len: %d\n", actualFrame->datalen);
-					
+                    // if (type == SWITCH_MEDIA_TYPE_VIDEO) {
+                    //     // Log first 50 bytes of actualFrame data
+                    //     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual Frame data: ");
+                    //     log_bytes(actualFrame->data, 50);
+                    //     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header: ");
+                    //     log_bytes(frame_header, len_unencrypted_bytes);
+                    //     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV: ");
+                    //     log_bytes(iv, iv_len);
+                    //     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Payload length: %zu\n", payload_length);
+                    //     log_bytes(payload, 5);
+                    //     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decrypted Payload length: %d\n", plaintext_len);
+                    //     log_bytes(decrypted_payload, 5);
+                    // }
 
                     free(decrypted_frame);
-                }else{
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Start Frame failed\n");
-				}
+                }
 
                 free(frame_header);
                 free(iv);
@@ -3392,12 +3333,13 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
 
             }
 
-        } else if (get_frame_type(actualFrame->data) == FRAME_TYPE_CONTINUE || get_frame_type(actualFrame->data) == FRAME_TYPE_CLOSE){
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Continue Frame\n");
+        } else if (is_continue_frame(actualFrame->data)) {
+            // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Continue Frame\n");
+            // Log IV inside continuous frame
+            // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in continue frame is %zu\n", iv_len);
 
             if (temp_frameDec.data != NULL) {
                 if (iv_len != 12) {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in continue frame is not 12\n");
                     // Append to temp_frameDec skipping first 4 bytes
                     memcpy((uint8_t *)temp_frameDec.data + temp_frameDec.datalen, (uint8_t *)actualFrame->data + freeswitch_trailer_size, actualFrame->datalen - freeswitch_trailer_size);
                     // Update temp_frameDec datalen and bufflen
@@ -3409,8 +3351,6 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
 
                     return;
                 } else {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in continue frame is 12\n");
-
                     // Get frame header from temp_frameDec first
                     frame_header = allocate_memory(len_unencrypted_bytes);
                     if (frame_header == NULL) {
@@ -3418,20 +3358,11 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                         free_temp_h264_header_dec(&temp_h264_headerDec);
                         return; // Memory allocation failed
                     }
-
-					//Copy 0 0 0 1 to first 4 of frame header, because of webrtc shift
-					frame_header[0] = 0;
-					frame_header[1] = 0;
-					frame_header[2] = 0;
-					frame_header[3] = 1;
-					frame_header[4] = 65;
-
                     // Copy after freeswitch_trailer_size until len_unencrypted_bytes
-                	copy_h264_frame_header((uint8_t *)temp_frameDec.data, len_unencrypted_bytes, freeswitch_trailer_size, webrtc_shift_size, frame_header,false);
+                    copy_frame_header((uint8_t *)temp_frameDec.data, len_unencrypted_bytes, 0, frame_header);
 
-					//Show frame header
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header in CONTINOUS frame: ");
-					log_bytes(frame_header, len_unencrypted_bytes);
+                    // Use memcpy freeswitch frame trailer
+                    memcpy(freeswitch_frame_trailer, temp_h264_headerDec.data, freeswitch_trailer_size);
 
                     // Extract IV first
                     iv_start = actualFrame->datalen - frame_trailer_size - iv_len;
@@ -3443,8 +3374,9 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                         return; // Memory allocation failed
                     }
                     copy_frame_iv((uint8_t *)actualFrame->data, iv_start, iv_len, iv);
+
                     // Append the continuous frame data to the stored start frame data
-                    new_datalen = temp_frameDec.datalen + actualFrame->datalen  - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size )+ webrtc_shift_size;
+                    new_datalen = temp_frameDec.datalen + actualFrame->datalen - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size);
                     new_data = allocate_memory(new_datalen);
                     if (new_data == NULL) {
                         free_temporary_frame_dec(&temp_frameDec);
@@ -3455,19 +3387,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                     }
 
                     // Copy temp_frameDec to new_data without unencrypted bytes
-					start_offset = len_unencrypted_bytes - webrtc_shift_size;
-					remaining_length = temp_frameDec.datalen - start_offset;
-					if (start_offset >= 0 && start_offset + remaining_length <= temp_frameDec.datalen) {
-						memcpy(new_data, (uint8_t *)temp_frameDec.data + start_offset, remaining_length);
-					} else {
-						// Handle the error: out of bounds
-						free(new_data);
-						free_temporary_frame_dec(&temp_frameDec);
-						free_temp_h264_header_dec(&temp_h264_headerDec);
-						free(frame_header);
-						free(iv);
-						return;
-					}
+                    memcpy(new_data, (uint8_t *)temp_frameDec.data + len_unencrypted_bytes, temp_frameDec.datalen);
 
                     // Get all current payload because unencrypted bytes are at startFrame
                     payload_length = actualFrame->datalen - (iv_len + frame_trailer_size + freeswitch_trailer_size);
@@ -3484,20 +3404,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                     copy_frame_payload((uint8_t *)actualFrame->data, payload_start, payload_length, payload);
 
                     // Append payload to new_data
-                    memcpy(new_data + remaining_length, payload, payload_length);
-
-					//Log first 10 of new_data
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "First New Data in continue frame: ");
-					log_bytes(new_data, 10);
-
-					//Log last 10 of new_fata
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last New Data in continue frame: ");
-					log_bytes(new_data + new_datalen - 10, 10);
-					
-					//Log len of newdata
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "New Data len in continue frame: %zu\n", new_datalen);
-
-					// Allocate memory for decrypted_payload
+                    memcpy(new_data + temp_frameDec.datalen - len_unencrypted_bytes, payload, payload_length);
 
 					decrypted_payload = allocate_memory(new_datalen);
 					if (decrypted_payload == NULL) {
@@ -3532,35 +3439,27 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                         }
 
                         // Copy freeswitch trailer
-						memcpy(decrypted_frame, temp_h264_headerDec.data, freeswitch_trailer_size);
+                        memcpy(decrypted_frame, freeswitch_frame_trailer, freeswitch_trailer_size);
 
                         // Copy frame header
-                        memcpy(decrypted_frame + freeswitch_trailer_size, frame_header + webrtc_shift_size, len_unencrypted_bytes - webrtc_shift_size);
+                        memcpy(decrypted_frame + freeswitch_trailer_size, frame_header, len_unencrypted_bytes);
 
                         // Copy decrypted payload
-                        memcpy(decrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes - webrtc_shift_size , decrypted_payload, plaintext_len);
+                        memcpy(decrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes, decrypted_payload, plaintext_len);
 
                         // Clear any remaining part of the original frame data to avoid leftover data causing noise
                         memset(actualFrame->data, 0xFF, actualFrame->buflen);
 
                         // Replace the original frame data with the decrypted frame data
-                        memcpy(actualFrame->data, decrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size);
-                        actualFrame->datalen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size;
-                        actualFrame->buflen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size;
-						actualFrame->packetlen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size;
-
-						//Log first 10 decrypted_frame
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "decrypted_frame Continue frame: ");
-						log_bytes(decrypted_frame, 10);
-						//Log decrypted_frame len
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "decrypted_frame Continue frame len: %d\n", actualFrame->datalen);
+                        memcpy(actualFrame->data, decrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len);
+                        actualFrame->datalen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len;
+                        actualFrame->buflen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len;
+						actualFrame->packetlen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len;
 
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Replacing actual frame success: ");
 
                         free(decrypted_frame);
-                    }else{
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Continue Frame failed\n");
-					}
+                    }
 
 
 
@@ -3581,7 +3480,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
             return;
         } else {
 			//Also log iv_len
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Not a start or continue frame, IV len is %zu\n", iv_len);	
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Not a start or continue frame, IV len is %zu\n", iv_len);	
 			free_temporary_frame_dec(&temp_frameDec);
 			free_temp_h264_header_dec(&temp_h264_headerDec);
             return;
@@ -3715,6 +3614,7 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 		// size_t frame_trailer_size = 4;
 		size_t freeswitch_trailer_size = 4;
         // uint8_t encrypted_payload[20000];
+		// uint8_t freeswitch_frame_trailer[freeswitch_trailer_size];
         // size_t len_unencrypted_bytes = 12;
         // int encrypted_len = 0;
         // size_t payload_length = 0;
@@ -3729,7 +3629,7 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 		
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Actual Video Frame before encrypt: ");
 
-		if(get_frame_type(actualFrame->data) == FRAME_TYPE_START){
+		if(is_start_frame(actualFrame->data)){
 			if(temp_frameEnc.data != NULL){
 				//TODO encrypt later
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Video Encrypt Start Actual Frame emp_frameEnc.data is not null len: %d\n", actualFrame->datalen);
@@ -3810,133 +3710,9 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 				return;
 			}
 
-			
 
 
-			// if(temp_frameEnc.data != NULL){
-			// 	//Log if temp frame is not null
-			// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Temp Frame is not null\n");
-
-			// 	frame_header = allocate_memory(len_unencrypted_bytes);
-			// 	if (frame_header == NULL) {
-			// 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed for frame_header\n");
-			// 		return;
-			// 	}
-
-			// 	copy_frame_header((uint8_t *)temp_frameEnc.data, len_unencrypted_bytes, freeswitch_trailer_size, frame_header);
-			// 	memcpy(freeswitch_frame_trailer, temp_h264_headerEnc.data, freeswitch_trailer_size);
-
-			// 	payload_length = temp_frameEnc.datalen - len_unencrypted_bytes;
-			// 	payload = allocate_memory(payload_length);
-			// 	if (payload == NULL) {
-			// 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed for payload\n");
-			// 		free(frame_header);
-			// 		return;
-			// 	}
-			// 	copy_frame_payload((uint8_t *)temp_frameEnc.data, len_unencrypted_bytes, payload_length, payload);
-
-			// 	for (size_t i = 0; i < iv_size; ++i) {
-			// 		iv[i] = 68;
-			// 	}
-
-			// 	encrypted_len = encrypt(encryptionKey, payload, payload_length, iv, frame_header, len_unencrypted_bytes, encrypted_payload);
-			// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Encrypted Payload length: %d\n", encrypted_len);
-			// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Encrypted Payload: ");
-			// 	log_bytes(encrypted_payload, 5);
-
-			// 	encrypted_frame = allocate_memory(freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len + iv_size + frame_trailer_size);
-			// 	if (encrypted_frame == NULL) {
-			// 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed for encrypted_frame\n");
-			// 		free(frame_header);
-			// 		free(payload);
-			// 		free_temporary_frame_enc(&temp_frameEnc);
-			// 		free_temp_h264_header_enc(&temp_h264_headerEnc);
-			// 		return;
-			// 	}
-
-			// 	memcpy(encrypted_frame, freeswitch_frame_trailer, freeswitch_trailer_size);
-			// 	memcpy(encrypted_frame + freeswitch_trailer_size, frame_header, len_unencrypted_bytes);
-			// 	memcpy(encrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes, encrypted_payload, encrypted_len);
-
-			// 	iv_start = freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len;
-			// 	memcpy(encrypted_frame + iv_start, iv, iv_size);
-			// 	encrypted_frame[iv_start + iv_size] = iv_size;
-			// 	for (size_t i = 0; i < iv_size; ++i) {
-			// 		sums_of_iv += iv[i];
-			// 	}
-			// 	encrypted_frame[iv_start + iv_size + 2] = (sums_of_iv >> 8) & 0xFF;
-			// 	encrypted_frame[iv_start + iv_size + 3] = sums_of_iv & 0xFF;
-
-			// 	memset(actualFrame->data, 0, actualFrame->buflen);
-			// 	memcpy(actualFrame->data, encrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len + iv_size + frame_trailer_size);
-			// 	actualFrame->datalen = freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len + iv_size + frame_trailer_size;
-			// 	actualFrame->buflen = freeswitch_trailer_size + len_unencrypted_bytes + encrypted_len + iv_size + frame_trailer_size;
-
-			// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Encrypted Actual Frame: ");
-				
-			// 	free(encrypted_frame);
-			// 	free(frame_header);
-			// 	free(payload);
-						
-			// 	free_temporary_frame_enc(&temp_frameEnc);
-			// 	free_temp_h264_header_enc(&temp_h264_headerEnc);
-
-			// 	//Append to new temp_frame
-			// 	temp_frameEnc.data = allocate_memory(10000000);
-			// 	if (temp_frameEnc.data == NULL) {
-			// 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed for temp_frameEnc.data\n");
-			// 		return;
-			// 	}
-
-			// 	temp_h264_headerEnc.data = allocate_memory(freeswitch_trailer_size);
-			// 	if (temp_h264_headerEnc.data == NULL) {
-			// 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed for temp_h264_headerEnc.data\n");
-			// 		free(temp_frameEnc.data);
-			// 		return;
-			// 	}
-
-			// 	memcpy(temp_frameEnc.data, (uint8_t *)actualFrame->data + freeswitch_trailer_size, actualFrame->datalen - freeswitch_trailer_size);
-			// 	temp_frameEnc.datalen = actualFrame->datalen - freeswitch_trailer_size;
-			// 	temp_frameEnc.buflen = actualFrame->datalen - freeswitch_trailer_size;
-
-
-			// 	memcpy(temp_h264_headerEnc.data, actualFrame->data, freeswitch_trailer_size);
-			// 	temp_h264_headerEnc.datalen = freeswitch_trailer_size;
-			// 	temp_h264_headerEnc.buflen = freeswitch_trailer_size;
-
-				
-			// }else{
-			// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Temp Frame  is null\n");
-
-			// 	free_temporary_frame_enc(&temp_frameEnc);
-			// 	free_temp_h264_header_enc(&temp_h264_headerEnc);
-
-			// 	temp_frameEnc.data = allocate_memory(10000000);
-			// 	if (temp_frameEnc.data == NULL) {
-			// 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed for temp_frameEnc.data\n");
-			// 		return;
-			// 	}
-
-			// 	temp_h264_headerEnc.data = allocate_memory(freeswitch_trailer_size);
-			// 	if (temp_h264_headerEnc.data == NULL) {
-			// 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Memory allocation failed for temp_h264_headerEnc.data\n");
-			// 		free(temp_frameEnc.data);
-			// 		return;
-			// 	}
-
-			// 	memcpy(temp_frameEnc.data, (uint8_t *)actualFrame->data + freeswitch_trailer_size, actualFrame->datalen - freeswitch_trailer_size);
-			// 	temp_frameEnc.datalen = actualFrame->datalen - freeswitch_trailer_size;
-			// 	temp_frameEnc.buflen = actualFrame->datalen - freeswitch_trailer_size;
-
-			// 	memcpy(temp_h264_headerEnc.data, actualFrame->data, freeswitch_trailer_size);
-			// 	temp_h264_headerEnc.datalen = freeswitch_trailer_size;
-			// 	temp_h264_headerEnc.buflen = freeswitch_trailer_size;
-
-			// }
-
-
-
-		}else if(get_frame_type(actualFrame->data) == FRAME_TYPE_CONTINUE || get_frame_type(actualFrame->data) == FRAME_TYPE_CLOSE){
+		}else if(is_continue_frame(actualFrame->data)){
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Video Encrypt Continue Actual Frame len: %d\n", actualFrame->datalen);
 	
 			memcpy((uint8_t *)temp_frameEnc.data + temp_frameEnc.datalen, (uint8_t *)actualFrame->data + freeswitch_trailer_size, actualFrame->datalen - freeswitch_trailer_size);
@@ -3951,7 +3727,6 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
     }
 }
 
-
 SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session_t *session, switch_frame_t **frame,
 															 switch_io_flag_t flags, int stream_id, switch_media_type_t type)
 {
@@ -3960,15 +3735,16 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	switch_status_t status;
 	switch_media_handle_t *smh;
 	int do_cng = 0;
-
+    // const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	uint8_t encryptionKey[32]; 
+	int i;
+	char temp[10];
+	char szString[1000];
 	//TODO: Ivan - Modify getting encryption key here
-	const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	//Get channel name
 	const char *channel_name = switch_channel_get_name(channel);
 	//TODO: Ivan - End of modification
-
-
 	switch_assert(session);
 
 	if (!(smh = session->media_handle)) {
@@ -3978,6 +3754,20 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	if (!smh->media_flags[SCMF_RUNNING]) {
 		return SWITCH_STATUS_FALSE;
 	}
+
+	// peter
+	szString[0] = 0;
+	for(i=0; i<32; i++)
+	{
+		encryptionKey[i] = session->key_iv[i];
+		if(i==0)
+			sprintf(temp, "%d", encryptionKey[i]);
+		else
+			sprintf(temp, ",%d", encryptionKey[i]);
+
+		strcat(szString, temp);	// for test
+	}
+	//switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "key = %s\n", szString);
 
 	engine = &smh->engines[type];
 
@@ -4003,7 +3793,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 						  switch_channel_get_name(session->channel), type2str(type));
 		return SWITCH_STATUS_INUSE;
 	}
-
 
 	engine->read_frame.datalen = 0;
 	engine->read_frame.flags = SFF_NONE;
@@ -4043,9 +3832,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 			goto end;
 		}
 
-
-
-
 		if (type == SWITCH_MEDIA_TYPE_VIDEO) {
 			if (engine->read_frame.m) {
 				if (!smh->vid_started) {
@@ -4062,7 +3848,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 				}
 			}
 		}
-
 
 		/* re-set codec if necessary */
 		if (type != SWITCH_MEDIA_TYPE_TEXT && engine->reset_codec > 0) {
@@ -4141,8 +3926,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 			switch_goto_status(SWITCH_STATUS_SUCCESS, end);
 		}
 
-
-
 		/* Try to read an RTCP frame, if successful raise an event */
 		if (switch_rtcp_zerocopy_read_frame(engine->rtp_session, &rtcp_frame) == SWITCH_STATUS_SUCCESS) {
 			switch_event_t *event;
@@ -4219,7 +4002,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG10, "Dispatched RTCP event\n");
 			}
 		}
-
 
 		/* Fast PASS! */
 		if (switch_test_flag((&engine->read_frame), SFF_PROXY_PACKET)) {
@@ -4434,9 +4216,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		}
 	}
 
-
-
-
 	if (engine->read_frame.datalen == 0) {
 		*frame = NULL;
 	}
@@ -4501,8 +4280,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 
 	} else {
 		*frame = &engine->read_frame;
-		// // TODO IVAN 
-		if (strstr(channel_name, "sofia/internal/1016") != NULL) {
+		if (strstr(channel_name, "sofia/external/*3000390016") != NULL) {
 			if(type == SWITCH_MEDIA_TYPE_AUDIO){
 				decrypt_audio_frame(session, frame, flags, stream_id, type, encryptionKey);
 			}
@@ -4524,91 +4302,8 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		switch_mutex_unlock(smh->read_mutex[type]);
 	}
 
-
 	return status;
 }
-
-static switch_status_t perform_write(switch_core_session_t *session, switch_frame_t *frame, switch_io_flag_t flags, int stream_id)
-{
-	switch_io_event_hook_write_frame_t *ptr;
-	switch_status_t status = SWITCH_STATUS_FALSE;
-	switch_media_handle_t *smh;
-
-	switch_assert(session != NULL);
-
-	if ((smh = session->media_handle)) {
-		switch_rtp_engine_t *a_engine = &smh->engines[SWITCH_MEDIA_TYPE_AUDIO];
-
-		if (a_engine && a_engine->write_fb && !(flags & SWITCH_IO_FLAG_QUEUED)) {
-			switch_frame_t *dupframe = NULL;
-
-			if (switch_frame_buffer_dup(a_engine->write_fb, frame, &dupframe) == SWITCH_STATUS_SUCCESS) {
-				switch_frame_buffer_push(a_engine->write_fb, dupframe);
-				dupframe = NULL;
-				return SWITCH_STATUS_SUCCESS;
-			}
-		}
-	}
-
-	if (session->bugs && !(frame->flags & SFF_NOT_AUDIO)) {
-		switch_media_bug_t *bp;
-		switch_bool_t ok = SWITCH_TRUE;
-		int prune = 0;
-
-		switch_thread_rwlock_rdlock(session->bug_rwlock);
-
-		for (bp = session->bugs; bp; bp = bp->next) {
-			ok = SWITCH_TRUE;
-
-			if (switch_core_media_bug_test_flag(bp, SMBF_PAUSE) || (switch_channel_test_flag(session->channel, CF_PAUSE_BUGS) && !switch_core_media_bug_test_flag(bp, SMBF_NO_PAUSE))) {
-				continue;
-			}
-
-			if (!switch_channel_test_flag(session->channel, CF_ANSWERED) && switch_core_media_bug_test_flag(bp, SMBF_ANSWER_REQ)) {
-				continue;
-			}
-			if (switch_test_flag(bp, SMBF_PRUNE)) {
-				prune++;
-				continue;
-			}
-
-			if (bp->ready) {
-				if (switch_test_flag(bp, SMBF_TAP_NATIVE_WRITE)) {
-					if (bp->callback) {
-						bp->native_write_frame = frame;
-						ok = bp->callback(bp, bp->user_data, SWITCH_ABC_TYPE_TAP_NATIVE_WRITE);
-						bp->native_write_frame = NULL;
-					}
-				}
-			}
-
-			if ((bp->stop_time && bp->stop_time <= switch_epoch_time_now(NULL)) || ok == SWITCH_FALSE) {
-				switch_set_flag(bp, SMBF_PRUNE);
-				prune++;
-			}
-		}
-		switch_thread_rwlock_unlock(session->bug_rwlock);
-
-		if (prune) {
-			switch_core_media_bug_prune(session);
-		}
-	}
-
-
-	if (session->endpoint_interface->io_routines->write_frame) {
-		if ((status = session->endpoint_interface->io_routines->write_frame(session, frame, flags, stream_id)) == SWITCH_STATUS_SUCCESS) {
-			for (ptr = session->event_hooks.write_frame; ptr; ptr = ptr->next) {
-				if ((status = ptr->write_frame(session, frame, flags, stream_id)) != SWITCH_STATUS_SUCCESS) {
-					break;
-				}
-			}
-		}
-	}
-
-	return status;
-}
-
-
 
 //?
 SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_session_t *session,
@@ -4618,13 +4313,10 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 	int bytes = 0, samples = 0, frames = 0;
 	switch_rtp_engine_t *engine;
 	switch_media_handle_t *smh;
-
-	//TODO: Ivan - Modify getting encryption key here
-	// const uint8_t encryptionKey[] = {113, 116, 113, 51, 113, 113, 210, 113, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
-	switch_channel_t *channel = switch_core_session_get_channel(session);
-	//Get channel name
-	const char *channel_name = switch_channel_get_name(channel);
-	//TODO: Ivan - End of modification
+	uint8_t encryptionKey[32];	// peter
+	int i;	// peter
+	char temp[10];	// peter
+	char szString[1000];	// peter
 
 	switch_assert(session);
 
@@ -4636,24 +4328,26 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 		return SWITCH_STATUS_FALSE;
 	}
 
+	// peter
+	szString[0] = 0;
+	for(i=0; i<32; i++)
+	{
+		encryptionKey[i] = session->key_iv[i];
+		if(i==0)
+			sprintf(temp, "%d", encryptionKey[i]);
+		else
+			sprintf(temp, ",%d", encryptionKey[i]);
+
+		strcat(szString, temp);  // for test
+	}
+	//switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "key = %s\n", szString);
+
 	engine = &smh->engines[type];
 
 	if (type == SWITCH_MEDIA_TYPE_VIDEO) {
 		if (engine->thread_write_lock && engine->thread_write_lock != switch_thread_self()) {
 			return SWITCH_STATUS_SUCCESS;
 		}
-
-		//Encrypt video frame
-		if (strstr(channel_name, "sofia/internal/1016") != NULL) {
-			//log frame len
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Video frame len in core_media_write_frame: %d\n", frame->datalen);
-
-			// encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
-			// encrypt_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Encrypting video frame: ");
-			// log_bytes((uint8_t *)frame->data + frame->datalen - 16, 16);
-		}
-		// End todo Ivan
 	}
 
 	if (type == SWITCH_MEDIA_TYPE_AUDIO) {
@@ -4686,7 +4380,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 				frames = 1;
 
 			samples = frames * engine->read_impl.samples_per_packet;
-			
 		}
 	}
 
@@ -5958,7 +5651,7 @@ static void check_stream_changes(switch_core_session_t *session, const char *r_s
 			switch_channel_set_flag(other_session->channel, CF_PROCESSING_STREAM_CHANGE);
 			switch_channel_set_flag(session->channel, CF_AWAITING_STREAM_CHANGE);
 
-			if (sdp_type == SDP_TYPE_REQUEST && r_sdp) {
+			if (sdp_type == SDP_OFFER && r_sdp) {
 				const char *filter_codec_string = switch_channel_get_variable(session->channel, "filter_codec_string");
 				
 				switch_channel_set_variable(session->channel, "codec_string", NULL);
@@ -5979,7 +5672,7 @@ static void check_stream_changes(switch_core_session_t *session, const char *r_s
 	}
 
 	if (other_session) {
-		if (sdp_type == SDP_TYPE_RESPONSE && switch_channel_test_flag(session->channel, CF_PROCESSING_STREAM_CHANGE)) {
+		if (sdp_type == SDP_ANSWER && switch_channel_test_flag(session->channel, CF_PROCESSING_STREAM_CHANGE)) {
 			switch_channel_clear_flag(session->channel, CF_PROCESSING_STREAM_CHANGE);
 			
 			if (switch_channel_test_flag(other_session->channel, CF_AWAITING_STREAM_CHANGE)) {
@@ -5992,7 +5685,7 @@ static void check_stream_changes(switch_core_session_t *session, const char *r_s
 				}
 
 				sdp_in = switch_channel_get_variable(other_session->channel, SWITCH_R_SDP_VARIABLE);
-				res = switch_core_media_negotiate_sdp(other_session, sdp_in, &proceed, SDP_TYPE_REQUEST);
+				res = switch_core_media_negotiate_sdp(other_session, sdp_in, &proceed, SDP_OFFER);
 				(void)res;
 				switch_core_media_activate_rtp(other_session);
 				msg = switch_core_session_alloc(other_session, sizeof(*msg));
@@ -6040,11 +5733,11 @@ SWITCH_DECLARE(void) switch_core_media_set_smode(switch_core_session_t *session,
 	engine->pass_codecs = 0;
 	
 	if (switch_channel_var_true(session->channel, "rtp_pass_codecs_on_stream_change")) {
-		if (sdp_type == SDP_TYPE_REQUEST && switch_channel_test_flag(session->channel, CF_REINVITE) && 
+		if (sdp_type == SDP_OFFER && switch_channel_test_flag(session->channel, CF_REINVITE) && 
 			switch_channel_media_up(session->channel) && (pass_codecs || old_smode != smode)) {
 
 			if (switch_core_session_get_partner(session, &other_session) == SWITCH_STATUS_SUCCESS) {
-				switch_core_media_set_smode(other_session, type, opp_smode, SDP_TYPE_REQUEST);
+				switch_core_media_set_smode(other_session, type, opp_smode, SDP_OFFER);
 				switch_channel_set_flag(session->channel, CF_STREAM_CHANGED);
 				switch_core_session_rwunlock(other_session);
 			}
@@ -6077,7 +5770,7 @@ static void switch_core_media_set_rmode(switch_core_session_t *session, switch_m
 
 	if (switch_core_session_get_partner(session, &other_session) == SWITCH_STATUS_SUCCESS) {
 
-		if (sdp_type == SDP_TYPE_RESPONSE && (switch_channel_test_flag(other_session->channel, CF_REINVITE) || switch_channel_direction(session->channel) == SWITCH_CALL_DIRECTION_OUTBOUND)) {
+		if (sdp_type == SDP_ANSWER && (switch_channel_test_flag(other_session->channel, CF_REINVITE) || switch_channel_direction(session->channel) == SWITCH_CALL_DIRECTION_OUTBOUND)) {
 			switch_core_media_set_smode(other_session, type, rmode, sdp_type);
 		}
 
@@ -6424,7 +6117,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 					switch_channel_clear_app_flag_key("T38", session->channel, CF_APP_T38);
 					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s T38 REFUSE on %s\n",
 									  switch_channel_get_name(channel),
-									  sdp_type == SDP_TYPE_RESPONSE ? "response" : "request");
+									  sdp_type == SDP_ANSWER ? "response" : "request");
 
 					restore_pmaps(a_engine);
 					fmatch = 0;
@@ -6437,7 +6130,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 
 					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s T38 ACCEPT on %s\n",
 									  switch_channel_get_name(channel),
-									  sdp_type == SDP_TYPE_RESPONSE ? "response" : "request");
+									  sdp_type == SDP_ANSWER ? "response" : "request");
 
 					if (switch_channel_test_app_flag_key("T38", session->channel, CF_APP_T38)) {
 						if (proceed) *proceed = 0;
@@ -6542,7 +6235,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s T38 %s POSSIBLE on %s\n",
 								  switch_channel_get_name(channel),
 								  fmatch ? "IS" : "IS NOT",
-								  sdp_type == SDP_TYPE_RESPONSE ? "response" : "request");
+								  sdp_type == SDP_ANSWER ? "response" : "request");
 
 
 				goto done;
@@ -6574,7 +6267,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 
 			switch_core_media_set_rmode(smh->session, SWITCH_MEDIA_TYPE_AUDIO, sdp_media_flow(m->m_mode), sdp_type);
 
-			if (sdp_type == SDP_TYPE_REQUEST) {
+			if (sdp_type == SDP_OFFER) {
 				switch(a_engine->rmode) {
 				case SWITCH_MEDIA_FLOW_RECVONLY:
 					switch_core_media_set_smode(smh->session, SWITCH_MEDIA_TYPE_AUDIO, SWITCH_MEDIA_FLOW_SENDONLY, sdp_type);
@@ -6640,7 +6333,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 				switch_channel_set_variable(session->channel, "media_audio_mode", NULL);
 			}
 
-			if (sdp_type == SDP_TYPE_RESPONSE) {
+			if (sdp_type == SDP_ANSWER) {
 				if (inactive) {
 					// When freeswitch had previously sent inactive in sip request. it should remain inactive otherwise smode should be sendrecv
 					if (a_engine->smode==SWITCH_MEDIA_FLOW_INACTIVE) {
@@ -7159,7 +6852,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 
 				if (smh->mparams->dtmf_type == DTMF_AUTO || smh->mparams->dtmf_type == DTMF_2833 ||
 					switch_channel_test_flag(session->channel, CF_LIBERAL_DTMF)) {
-					if (sdp_type == SDP_TYPE_REQUEST) {
+					if (sdp_type == SDP_OFFER) {
 						smh->mparams->te = smh->mparams->recv_te = (switch_payload_t) best_te;
 						switch_channel_set_variable(session->channel, "dtmf_type", "rfc2833");
 						smh->mparams->dtmf_type = DTMF_2833;
@@ -7227,7 +6920,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 														 map->rm_encoding,
 														 NULL,
 														 NULL,
-														 SDP_TYPE_REQUEST,
+														 SDP_OFFER,
 														 map->rm_pt,
 														 1000,
 														 0,
@@ -7305,7 +6998,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 			
 			switch_core_media_set_rmode(smh->session, SWITCH_MEDIA_TYPE_VIDEO, sdp_media_flow(m->m_mode), sdp_type);
 			
-			if (sdp_type == SDP_TYPE_REQUEST) {
+			if (sdp_type == SDP_OFFER) {
 				sdp_bandwidth_t *bw;
 				int tias = 0;
 
@@ -7471,7 +7164,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 						vmatch = strcasecmp(rm_encoding, imp->iananame) ? 0 : 1;
 					}
 
-					if (sdp_type == SDP_TYPE_RESPONSE && consider_video_fmtp && vmatch && !zstr(map->rm_fmtp) && !zstr(smh->fmtps[i])) {
+					if (sdp_type == SDP_ANSWER && consider_video_fmtp && vmatch && !zstr(map->rm_fmtp) && !zstr(smh->fmtps[i])) {
 						almost_vmatch = 1;
 						vmatch = !strcasecmp(smh->fmtps[i], map->rm_fmtp);
 					}
@@ -7646,7 +7339,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 												 "L16",
 												 NULL,
 												 NULL,
-												 SDP_TYPE_REQUEST,
+												 SDP_OFFER,
 												 97,
 												 8000,
 												 20,
@@ -7703,7 +7396,7 @@ SWITCH_DECLARE(uint8_t) switch_core_media_negotiate_sdp(switch_core_session_t *s
 		if (switch_channel_test_flag(channel, CF_VIDEO) && !saw_video) {
 			//switch_core_media_set_rmode(smh->session, SWITCH_MEDIA_TYPE_VIDEO, SWITCH_MEDIA_FLOW_INACTIVE, sdp_type);
 
-			if (sdp_type == SDP_TYPE_REQUEST) {
+			if (sdp_type == SDP_OFFER) {
 				switch_core_media_set_smode(smh->session, SWITCH_MEDIA_TYPE_VIDEO, SWITCH_MEDIA_FLOW_INACTIVE, sdp_type);
 			}
 		}
@@ -8402,6 +8095,86 @@ SWITCH_DECLARE(void) switch_core_autobind_cpu(void)
 	if (video_globals.cpu_count > 1) {
 		switch_core_thread_set_cpu_affinity(next_cpu());
 	}
+}
+
+static switch_status_t perform_write(switch_core_session_t *session, switch_frame_t *frame, switch_io_flag_t flags, int stream_id)
+{
+	switch_io_event_hook_write_frame_t *ptr;
+	switch_status_t status = SWITCH_STATUS_FALSE;
+	switch_media_handle_t *smh;
+
+	switch_assert(session != NULL);
+
+	if ((smh = session->media_handle)) {
+		switch_rtp_engine_t *a_engine = &smh->engines[SWITCH_MEDIA_TYPE_AUDIO];
+
+		if (a_engine && a_engine->write_fb && !(flags & SWITCH_IO_FLAG_QUEUED)) {
+			switch_frame_t *dupframe = NULL;
+
+			if (switch_frame_buffer_dup(a_engine->write_fb, frame, &dupframe) == SWITCH_STATUS_SUCCESS) {
+				switch_frame_buffer_push(a_engine->write_fb, dupframe);
+				dupframe = NULL;
+				return SWITCH_STATUS_SUCCESS;
+			}
+		}
+	}
+
+	if (session->bugs && !(frame->flags & SFF_NOT_AUDIO)) {
+		switch_media_bug_t *bp;
+		switch_bool_t ok = SWITCH_TRUE;
+		int prune = 0;
+
+		switch_thread_rwlock_rdlock(session->bug_rwlock);
+
+		for (bp = session->bugs; bp; bp = bp->next) {
+			ok = SWITCH_TRUE;
+
+			if (switch_core_media_bug_test_flag(bp, SMBF_PAUSE) || (switch_channel_test_flag(session->channel, CF_PAUSE_BUGS) && !switch_core_media_bug_test_flag(bp, SMBF_NO_PAUSE))) {
+				continue;
+			}
+
+			if (!switch_channel_test_flag(session->channel, CF_ANSWERED) && switch_core_media_bug_test_flag(bp, SMBF_ANSWER_REQ)) {
+				continue;
+			}
+			if (switch_test_flag(bp, SMBF_PRUNE)) {
+				prune++;
+				continue;
+			}
+
+			if (bp->ready) {
+				if (switch_test_flag(bp, SMBF_TAP_NATIVE_WRITE)) {
+					if (bp->callback) {
+						bp->native_write_frame = frame;
+						ok = bp->callback(bp, bp->user_data, SWITCH_ABC_TYPE_TAP_NATIVE_WRITE);
+						bp->native_write_frame = NULL;
+					}
+				}
+			}
+
+			if ((bp->stop_time && bp->stop_time <= switch_epoch_time_now(NULL)) || ok == SWITCH_FALSE) {
+				switch_set_flag(bp, SMBF_PRUNE);
+				prune++;
+			}
+		}
+		switch_thread_rwlock_unlock(session->bug_rwlock);
+
+		if (prune) {
+			switch_core_media_bug_prune(session);
+		}
+	}
+
+
+	if (session->endpoint_interface->io_routines->write_frame) {
+		if ((status = session->endpoint_interface->io_routines->write_frame(session, frame, flags, stream_id)) == SWITCH_STATUS_SUCCESS) {
+			for (ptr = session->event_hooks.write_frame; ptr; ptr = ptr->next) {
+				if ((status = ptr->write_frame(session, frame, flags, stream_id)) != SWITCH_STATUS_SUCCESS) {
+					break;
+				}
+			}
+		}
+	}
+
+	return status;
 }
 
 
@@ -9902,8 +9675,9 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_activate_rtp(switch_core_sessi
 	}
 
 	if (!switch_channel_test_flag(session->channel, CF_PROXY_MEDIA)) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "AUDIO RTP [%s] %s port %d -> %s port %d codec: %u ms: %d\n",
-						  switch_channel_get_name(session->channel),
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "AUDIO RTP %s port %d -> %s port %d codec: %u ms: %d\n",
+	//	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "AUDIO RTP [%s] %s port %d -> %s port %d codec: %u ms: %d\n",
+	//					  switch_channel_get_name(session->channel),
 						  a_engine->local_sdp_ip,
 						  a_engine->local_sdp_port,
 						  a_engine->cur_payload_map->remote_sdp_ip,
@@ -10953,7 +10727,7 @@ static const char *get_media_profile_name(switch_core_session_t *session, int se
 static char *get_setup(switch_rtp_engine_t *engine, switch_core_session_t *session, switch_sdp_type_t sdp_type)
 {
 
-	if (sdp_type == SDP_TYPE_REQUEST) {
+	if (sdp_type == SDP_OFFER) {
 		engine->dtls_controller = 0;
 		engine->new_dtls = 1;
 		engine->new_ice = 1;
@@ -11054,7 +10828,7 @@ static void generate_m(switch_core_session_t *session, char *buf, size_t buflen,
 	}
 
 	if (smh->mparams->dtmf_type == DTMF_2833 && smh->mparams->te > 95) {
-		if (sdp_type == SDP_TYPE_RESPONSE) {
+		if (sdp_type == SDP_ANSWER) {
 			switch_rtp_engine_t *a_engine = &smh->engines[SWITCH_MEDIA_TYPE_AUDIO];
 			if (a_engine) {
 				payload_map_t *pmap;
@@ -11160,7 +10934,7 @@ static void generate_m(switch_core_session_t *session, char *buf, size_t buflen,
 
 
 	if ((smh->mparams->dtmf_type == DTMF_2833 || switch_channel_test_flag(session->channel, CF_LIBERAL_DTMF)) && smh->mparams->te > 95) {
-		if (smh->mparams->dtmf_type == DTMF_2833 && sdp_type == SDP_TYPE_RESPONSE) {
+		if (smh->mparams->dtmf_type == DTMF_2833 && sdp_type == SDP_ANSWER) {
 			switch_rtp_engine_t *a_engine = &smh->engines[SWITCH_MEDIA_TYPE_AUDIO];
 			if (a_engine) {
 				payload_map_t *pmap;
@@ -11509,7 +11283,7 @@ SWITCH_DECLARE(void) switch_core_media_gen_local_sdp(switch_core_session_t *sess
 		v_engine->rtcp_mux = -1;
 	}
 
-	if ((a_engine->rtcp_mux != -1 && v_engine->rtcp_mux != -1) && (sdp_type == SDP_TYPE_REQUEST)) {
+	if ((a_engine->rtcp_mux != -1 && v_engine->rtcp_mux != -1) && (sdp_type == SDP_OFFER)) {
 		a_engine->rtcp_mux = 1;
 		v_engine->rtcp_mux = 1;
 	}
@@ -11592,7 +11366,7 @@ SWITCH_DECLARE(void) switch_core_media_gen_local_sdp(switch_core_session_t *sess
 				continue;
 			}
 
-			if (sdp_type == SDP_TYPE_REQUEST) {
+			if (sdp_type == SDP_OFFER) {
 				for (j = 0; j < SWITCH_MAX_CODECS; j++) {
 					if (smh->rates[j] == 0) {
 						break;
@@ -11610,7 +11384,7 @@ SWITCH_DECLARE(void) switch_core_media_gen_local_sdp(switch_core_session_t *sess
 			continue;
 		}
 
-		if (sdp_type == SDP_TYPE_REQUEST) {
+		if (sdp_type == SDP_OFFER) {
 			switch_core_session_t *orig_session = NULL;
 
 			switch_core_session_get_partner(session, &orig_session);
@@ -12425,7 +12199,7 @@ SWITCH_DECLARE(void) switch_core_media_gen_local_sdp(switch_core_session_t *sess
 					}
 				}
 
-				if (sdp_type == SDP_TYPE_REQUEST) {
+				if (sdp_type == SDP_OFFER) {
 					fir++;
 					pli++;
 					nack++;
@@ -12686,7 +12460,7 @@ SWITCH_DECLARE(void) switch_core_media_gen_local_sdp(switch_core_session_t *sess
 
 	// RTP TEXT
 
-	if (sdp_type == SDP_TYPE_RESPONSE && !switch_channel_test_flag(session->channel, CF_RTT)) {
+	if (sdp_type == SDP_ANSWER && !switch_channel_test_flag(session->channel, CF_RTT)) {
 		if (switch_channel_test_flag(session->channel, CF_TEXT_SDP_RECVD)) {
 			switch_channel_clear_flag(session->channel, CF_TEXT_SDP_RECVD);
 			switch_snprintf(buf + strlen(buf), SDPBUFLEN - strlen(buf), "m=text 0 %s 19\r\n",
@@ -12701,7 +12475,7 @@ SWITCH_DECLARE(void) switch_core_media_gen_local_sdp(switch_core_session_t *sess
 		t_engine->t140_pt = 0;
 		t_engine->red_pt = 0;
 
-		if (sdp_type == SDP_TYPE_REQUEST) {
+		if (sdp_type == SDP_OFFER) {
 			t_engine->t140_pt = 96;
 			t_engine->red_pt = 97;
 
@@ -12710,7 +12484,7 @@ SWITCH_DECLARE(void) switch_core_media_gen_local_sdp(switch_core_session_t *sess
 											  "red",
 											  NULL,
 											  NULL,
-											  SDP_TYPE_REQUEST,
+											  SDP_OFFER,
 											  t_engine->red_pt,
 											  1000,
 											  0,
@@ -12722,7 +12496,7 @@ SWITCH_DECLARE(void) switch_core_media_gen_local_sdp(switch_core_session_t *sess
 											  "t140",
 											  NULL,
 											  NULL,
-											  SDP_TYPE_REQUEST,
+											  SDP_OFFER,
 											  t_engine->t140_pt,
 											  1000,
 											  0,
@@ -13223,7 +12997,7 @@ SWITCH_DECLARE(void) switch_core_media_patch_sdp(switch_core_session_t *session)
 												 "PROXY",
 												 NULL,
 												 NULL,
-												 SDP_TYPE_RESPONSE,
+												 SDP_ANSWER,
 												 0,
 												 8000,
 												 20,
@@ -13380,7 +13154,7 @@ SWITCH_DECLARE(void) switch_core_media_patch_sdp(switch_core_session_t *session)
 														 "PROXY-VID",
 														 NULL,
 														 NULL,
-														 SDP_TYPE_RESPONSE,
+														 SDP_ANSWER,
 														 0,
 														 90000,
 														 90000,
@@ -13443,7 +13217,7 @@ SWITCH_DECLARE(void) switch_core_media_patch_sdp(switch_core_session_t *session)
 														 "PROXY-TXT",
 														 NULL,
 														 NULL,
-														 SDP_TYPE_RESPONSE,
+														 SDP_ANSWER,
 														 0,
 														 90000,
 														 90000,
@@ -14344,7 +14118,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_receive_message(switch_core_se
 					switch_core_media_prepare_codecs(session, 1);
 					clear_pmaps(a_engine);
 					clear_pmaps(v_engine);
-					switch_core_media_gen_local_sdp(session, SDP_TYPE_REQUEST, ip, (switch_port_t)atoi(port), NULL, 1);
+					switch_core_media_gen_local_sdp(session, SDP_OFFER, ip, (switch_port_t)atoi(port), NULL, 1);
 				}
 			}
 
@@ -14396,7 +14170,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_receive_message(switch_core_se
 				switch_core_media_prepare_codecs(session, SWITCH_TRUE);
 				switch_core_media_check_video_codecs(session);
 				
-				switch_core_media_gen_local_sdp(session, SDP_TYPE_REQUEST, NULL, 0, NULL, 1);
+				switch_core_media_gen_local_sdp(session, SDP_OFFER, NULL, 0, NULL, 1);
 			}
 
 			if (msg->numeric_arg && switch_core_session_get_partner(session, &nsession) == SWITCH_STATUS_SUCCESS) {
@@ -15209,7 +14983,7 @@ SWITCH_DECLARE(void) switch_core_media_check_outgoing_proxy(switch_core_session_
 											 "PROXY",
 											 NULL,
 											 NULL,
-											 SDP_TYPE_RESPONSE,
+											 SDP_ANSWER,
 											 0,
 											 8000,
 											 20,
@@ -15225,7 +14999,7 @@ SWITCH_DECLARE(void) switch_core_media_check_outgoing_proxy(switch_core_session_
 												 "PROXY-VID",
 												 NULL,
 												 NULL,
-												 SDP_TYPE_RESPONSE,
+												 SDP_ANSWER,
 												 0,
 												 90000,
 												 90000,
@@ -15246,7 +15020,7 @@ SWITCH_DECLARE(void) switch_core_media_check_outgoing_proxy(switch_core_session_
 												 "PROXY-TXT",
 												 NULL,
 												 NULL,
-												 SDP_TYPE_RESPONSE,
+												 SDP_ANSWER,
 												 0,
 												 1000,
 												 1000,
@@ -15400,7 +15174,7 @@ SWITCH_DECLARE (void) switch_core_media_recover_session(switch_core_session_t *s
 		}
 	}
 
-	switch_core_media_gen_local_sdp(session, SDP_TYPE_REQUEST, NULL, 0, NULL, 1);
+	switch_core_media_gen_local_sdp(session, SDP_OFFER, NULL, 0, NULL, 1);
 	switch_core_media_set_video_codec(session, 1);
 
 	if (switch_core_media_activate_rtp(session) != SWITCH_STATUS_SUCCESS) {
@@ -15927,12 +15701,29 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 	switch_frame_t write_frame = {0};
 	switch_rtp_engine_t *v_engine = NULL;
 	switch_bool_t need_free = SWITCH_FALSE;
+// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	uint8_t encryptionKey[32]; 
+	int i;
+	char temp[10];
+	char szString[1000];
 	//TODO: Ivan - Modify getting encryption key here
-	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
-	// switch_channel_t *channel = switch_core_session_get_channel(session);
-	// //Get channel name
-	// const char *channel_name = switch_channel_get_name(channel);
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	//Get channel name
+	const char *channel_name = switch_channel_get_name(channel);
 	//TODO: Ivan - End of modification
+
+	// peter
+	szString[0] = 0;
+	for(i=0; i<32; i++)
+	{
+		encryptionKey[i] = session->key_iv[i];
+		if(i==0)
+			sprintf(temp, "%d", encryptionKey[i]);
+		else
+			sprintf(temp, ",%d", encryptionKey[i]);
+
+		strcat(szString, temp);	// for test
+	}
 
 	switch_assert(session);
 
@@ -16130,23 +15921,22 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 			}
 
 			if (frame->datalen == 0) break;
-
 			//TODO IVAN
-			// //Log encode status
-			// switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[Ivan] Encode status: %d\n", encode_status);
-			// //Log channel_name
-			// switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[Ivan] Channel name: %s\n", channel_name);
-			// //Log frame len
-			// switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[Ivan] Frame len: %d\n", frame->datalen);
+			//Log encode status
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[Ivan] Encode Video status: %d\n", encode_status);
+			//Log channel_name
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[Ivan] Channel Video name: %s\n", channel_name);
+			//Log frame len
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[Ivan] Frame Videolen: %d\n", frame->datalen);
 
 
 			// //Encrypt video frame
-			// if (strstr(channel_name, "sofia/internal/1016") != NULL) {
-			// 	// encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
-			// 	encrypt_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
-			// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Encrypting video frame: ");
-			// 	log_bytes((uint8_t *)frame->data + frame->datalen - 16, 16);
-			// }
+			if (strstr(channel_name, "sofia/external/*3000390016") != NULL) {
+				// encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
+				encrypt_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Encrypting video frame: ");
+
+			}
 			// End todo Ivan
 
 			switch_set_flag(frame, SFF_RAW_RTP_PARSE_FRAME);
@@ -17081,12 +16871,30 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 	switch_frame_t *enc_frame = NULL, *write_frame = frame;
 	unsigned int flag = 0, need_codec = 0, perfect = 0, do_bugs = 0, do_write = 0, do_resample = 0, ptime_mismatch = 0, pass_cng = 0, resample = 0;
 	int did_write_resample = 0;
+	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	uint8_t encryptionKey[32]; 
+	int i;
+	char temp[10];
+	char szString[1000];
 	//TODO: Ivan - Modify getting encryption key here
-	const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	//Get channel name
 	const char *channel_name = switch_channel_get_name(channel);
 	//TODO: Ivan - End of modification
+
+
+	// peter
+	szString[0] = 0;
+	for(i=0; i<32; i++)
+	{
+		encryptionKey[i] = session->key_iv[i];
+		if(i==0)
+			sprintf(temp, "%d", encryptionKey[i]);
+		else
+			sprintf(temp, ",%d", encryptionKey[i]);
+
+		strcat(szString, temp);	// for test
+	}
 
 	switch_assert(session != NULL);
 	switch_assert(frame != NULL);
@@ -17162,7 +16970,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 
 			if ((switch_test_flag(frame->codec, SWITCH_CODEC_FLAG_PASSTHROUGH) || switch_test_flag(session->read_codec, SWITCH_CODEC_FLAG_PASSTHROUGH)) ||
 				switch_channel_test_flag(session->channel, CF_PASSTHRU_PTIME_MISMATCH)) {
-				status = perform_write(session, frame, flags, 1);
+				status = perform_write(session, frame, flags, stream_id);
 				goto error;
 			}
 
@@ -17522,10 +17330,9 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[Ivan] Channel name: %s\n", channel_name);
 
 			// Encrypt audio frame
-			if (strstr(channel_name, "sofia/internal/1016") != NULL) {
+			if (strstr(channel_name, "sofia/external/*3000390016") != NULL) {
 				encrypt_frame(&write_frame, flags, stream_id, SWITCH_MEDIA_TYPE_AUDIO, encryptionKey);
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Encrypting audio frame: ");
-				log_bytes((uint8_t *)write_frame->data + write_frame->datalen - 16, 16);
 			}
 			//End TODO IVAN
 

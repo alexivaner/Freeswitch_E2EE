@@ -3207,7 +3207,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
     if (*frame && type == SWITCH_MEDIA_TYPE_VIDEO) {
         switch_frame_t *actualFrame = *frame;
         size_t frame_trailer_size = 4;
-		size_t webrtc_shift_size=5;
+        size_t webrtc_shift_size = 5;
         size_t freeswitch_trailer_size = 2;
         uint8_t frame_trailer[frame_trailer_size];
         size_t len_unencrypted_bytes = 12;
@@ -3225,24 +3225,26 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
         // New Data in continuous frame
         size_t new_datalen = 0;
         uint8_t *new_data = NULL;
-		size_t start_offset = 0;
-		size_t remaining_length = 0;
+        size_t start_offset = 0;
+        size_t remaining_length = 0;
+
+        // Header without webrtc shift
+        size_t header_without_webrtc_len_continue_frame = len_unencrypted_bytes - webrtc_shift_size;
+        size_t header_without_webrtc_len_start_frame = len_unencrypted_bytes - webrtc_shift_size + 1;
+        uint8_t *header_without_webrtc = NULL;
 
         // Get 4 bytes of frame trailer, frame trailer contains 2 bytes of IV size and two bytes of IV checksum
         copy_frame_trailer(actualFrame->data, actualFrame->datalen, frame_trailer_size, frame_trailer);
         // Get IV len
         iv_len = frame_trailer[0];
-		
-		//Log len of actual frame
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual Video Frame len: %d\n", actualFrame->datalen);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "First  5 frame of video: ");
-		log_bytes((uint8_t *)actualFrame->data, 5);
 
+        // Log len of actual frame
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual Video Frame len: %d\n", actualFrame->datalen);
 
         if (get_frame_type(actualFrame->data) == FRAME_TYPE_START) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Start Frame\n");
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual first 30 Video Start Frame data: ");
-			log_bytes((uint8_t *)actualFrame->data, 30);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual first 20 Video Start Frame data: ");
+            log_bytes((uint8_t *)actualFrame->data, 20);
 
             // If iv len is not 12, it means that it needs to wait for continuous frame
             if (iv_len != 12) {
@@ -3272,33 +3274,30 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                 temp_h264_headerDec.datalen = freeswitch_trailer_size;
                 temp_h264_headerDec.buflen = freeswitch_trailer_size;
 
-				memset(actualFrame->data, 0xFF, actualFrame->buflen);
-
 
                 return;
             } else {
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in start frame is 12: %zu\n", iv_len);
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in start frame is 12: %zu\n", iv_len);
                 frame_header = allocate_memory(len_unencrypted_bytes);
                 if (frame_header == NULL) {
                     return; // Memory allocation failed
                 }
 
-				//Copy 0 0 0 1 to first 4 of frame header, because of webrtc shift
-				frame_header[0] = 0;
-				frame_header[1] = 0;
-				frame_header[2] = 0;
-				frame_header[3] = 1;
-				frame_header[4] = 65;
-
+                // Copy 0 0 0 1 to first 4 of frame header, because of webrtc shift
+                frame_header[0] = 0;
+                frame_header[1] = 0;
+                frame_header[2] = 0;
+                frame_header[3] = 1;
+                frame_header[4] = 65;
 
                 // Copy after freeswitch_trailer_size until len_unencrypted_bytes
-                copy_h264_frame_header((uint8_t *)actualFrame->data, len_unencrypted_bytes, freeswitch_trailer_size, webrtc_shift_size, frame_header,true);
+                copy_h264_frame_header((uint8_t *)actualFrame->data, len_unencrypted_bytes, freeswitch_trailer_size, webrtc_shift_size, frame_header, true);
 
-				//Show frame header
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header in start frame: ");
-				log_bytes(frame_header, len_unencrypted_bytes);
+                // // Show frame header
+                // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header in start frame: ");
+                // log_bytes(frame_header, len_unencrypted_bytes);
 
-				// Extract IV first
+                // Extract IV first
                 iv_start = actualFrame->datalen - frame_trailer_size - iv_len;
                 iv = allocate_memory(iv_len);
                 if (iv == NULL) {
@@ -3308,7 +3307,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                 copy_frame_iv((uint8_t *)actualFrame->data, iv_start, iv_len, iv);
 
                 // Get Payload
-                payload_length = actualFrame->datalen + webrtc_shift_size - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size)+ 1;
+                payload_length = actualFrame->datalen + webrtc_shift_size - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size) + 1;
                 payload = allocate_memory(payload_length);
                 if (payload == NULL) {
                     free(frame_header);
@@ -3318,8 +3317,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                 payload_start = len_unencrypted_bytes + freeswitch_trailer_size - webrtc_shift_size - 1;
                 copy_frame_payload((uint8_t *)actualFrame->data, payload_start, payload_length, payload);
 
-
-				// Allocate memory for decrypted payload based on payload length
+                // Allocate memory for decrypted payload based on payload length
                 decrypted_payload = allocate_memory(payload_length);
                 if (decrypted_payload == NULL) {
                     free(frame_header);
@@ -3328,88 +3326,100 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                     return; // Memory allocation failed
                 }
 
-				//log payload length
-				// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Payload length in start frame: %zu\n", payload_length);
-
-				//log first 10 payload 
-				// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "First 10 payload in start frame: ");
-				// log_bytes(payload, 10);
-
                 // Decrypt the frame data
                 plaintext_len = decrypt(encryptionKey, payload, payload_length, iv, frame_header, len_unencrypted_bytes, decrypted_payload);
                 // If decryption was successful, replace the frame data
                 if (plaintext_len > 0) {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Start Frame successful\n");
                     // Allocate memory for the new decrypted frame
-                    decrypted_frame = allocate_memory(freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size +1);
+                    decrypted_frame = allocate_memory((len_unencrypted_bytes - webrtc_shift_size + 1) + plaintext_len);
                     if (decrypted_frame == NULL) {
                         free(frame_header);
                         free(iv);
                         free(payload);
-						free(decrypted_payload);
+                        free(decrypted_payload);
                         return; // Memory allocation failed
                     }
 
-					//Copy freeswitch trailer
-                    memcpy(decrypted_frame, actualFrame->data, freeswitch_trailer_size);
+                    // Allocate memory for header_without_webrtc
+                    header_without_webrtc = allocate_memory(header_without_webrtc_len_start_frame);
+                    if (header_without_webrtc == NULL) {
+                        free(frame_header);
+                        free(iv);
+                        free(payload);
+                        free(decrypted_payload);
+                        free(decrypted_frame);
+                        return; // Memory allocation failed
+                    }
+                    memcpy(header_without_webrtc, frame_header + webrtc_shift_size - 1, header_without_webrtc_len_start_frame);
 
-					// Copy frame header
-					memcpy(decrypted_frame + freeswitch_trailer_size, frame_header + webrtc_shift_size + 1, len_unencrypted_bytes -  webrtc_shift_size - 1);
+                    // // Log header_without_webrtc
+                    // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Header without webrtc shift in start frame: ");
+                    // log_bytes(header_without_webrtc, header_without_webrtc_len_start_frame);
 
+					// //Log first 20 bytes of decrypted_payload
+					// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "First 20 bytes of decrypted_payload: ");
+					// log_bytes(decrypted_payload, 20);
+
+                    // Copy frame header
+                    memcpy(decrypted_frame, header_without_webrtc, header_without_webrtc_len_start_frame);
                     // Copy decrypted payload
-                    memcpy(decrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes- webrtc_shift_size, decrypted_payload, plaintext_len);
+                    memcpy(decrypted_frame + header_without_webrtc_len_start_frame, decrypted_payload, plaintext_len);
 
-                    // Clear any remaining part of the original frame data to avoid leftover data causing noise
-                    memset(actualFrame->data, 0xFF, actualFrame->buflen);
-					
+
+ 					// Clear any remaining part of the original frame data to avoid leftover data causing noise
+                	memset(actualFrame->data, 0xFF, actualFrame->buflen);
 
                     // Replace the original frame data with the decrypted frame data
-                    memcpy(actualFrame->data, decrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len  - webrtc_shift_size);
-                    actualFrame->datalen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len  - webrtc_shift_size;
-                    actualFrame->buflen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len  - webrtc_shift_size;
-					actualFrame->packetlen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len  - webrtc_shift_size;
+                    memcpy(actualFrame->data, decrypted_frame, header_without_webrtc_len_start_frame + plaintext_len);
+                    actualFrame->datalen = header_without_webrtc_len_start_frame + plaintext_len;
+                    actualFrame->buflen = header_without_webrtc_len_start_frame + plaintext_len;
 
-					//Log first 10 decrypted_frame
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "decrypted_frame Start frame: ");
-					log_bytes(decrypted_frame, 10);
-					//Log decrypted_frame len
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "decrypted_frame Start frame len: %d\n", actualFrame->datalen);
-					
+					// //Log first 20 frame of actualFrame
+					// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "First 20 frame of actualFrame: ");
+					// log_bytes((uint8_t *)actualFrame->data, 20);
+
+					// //Log last 20 frame of actualFrame
+					// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last 20 frame of actualFrame: ");
+					// log_bytes((uint8_t *)actualFrame->data + actualFrame->datalen - 20, 20);
 
                     free(decrypted_frame);
-                }else{
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Start Frame failed\n");
-				}
+                    free(header_without_webrtc);
+
+                } else {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Start Frame failed\n");
+                }
 
                 free(frame_header);
                 free(iv);
                 free(payload);
-				free(decrypted_payload);
+                free(decrypted_payload);
 
-				// Free temp_frameDec if it was used
+                // Free temp_frameDec if it was used
                 free_temporary_frame_dec(&temp_frameDec);
                 free_temp_h264_header_dec(&temp_h264_headerDec);
-
             }
 
-        } else if (get_frame_type(actualFrame->data) == FRAME_TYPE_CONTINUE || get_frame_type(actualFrame->data) == FRAME_TYPE_CLOSE){
+        } else if (get_frame_type(actualFrame->data) == FRAME_TYPE_CONTINUE || get_frame_type(actualFrame->data) == FRAME_TYPE_CLOSE) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Continue Frame\n");
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Actual first 20 Video Continue Frame data: ");
+            log_bytes((uint8_t *)actualFrame->data, 20);
 
             if (temp_frameDec.data != NULL) {
                 if (iv_len != 12) {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in continue frame is not 12\n");
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in continue frame is not 12\n");
                     // Append to temp_frameDec skipping first 4 bytes
                     memcpy((uint8_t *)temp_frameDec.data + temp_frameDec.datalen, (uint8_t *)actualFrame->data + freeswitch_trailer_size, actualFrame->datalen - freeswitch_trailer_size);
                     // Update temp_frameDec datalen and bufflen
                     temp_frameDec.datalen += actualFrame->datalen - freeswitch_trailer_size;
                     temp_frameDec.buflen += actualFrame->datalen - freeswitch_trailer_size;
 
-					//Clear actualFrame to 0
-					memset(actualFrame->data, 0xFF, actualFrame->buflen);
+					//Replace actual frame temp_frameDec.data that we copy from actual frame before but only replace with part that we just copu
+					// memcpy((uint8_t *)actualFrame->data + freeswitch_trailer_size, (uint8_t *)temp_frameDec.data + temp_frameDec.datalen - actualFrame->datalen + freeswitch_trailer_size, actualFrame->datalen - freeswitch_trailer_size);
 
                     return;
                 } else {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in continue frame is 12\n");
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "IV len in continue frame is 12\n");
 
                     // Get frame header from temp_frameDec first
                     frame_header = allocate_memory(len_unencrypted_bytes);
@@ -3419,19 +3429,19 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                         return; // Memory allocation failed
                     }
 
-					//Copy 0 0 0 1 to first 4 of frame header, because of webrtc shift
-					frame_header[0] = 0;
-					frame_header[1] = 0;
-					frame_header[2] = 0;
-					frame_header[3] = 1;
-					frame_header[4] = 65;
+                    // Copy 0 0 0 1 to first 4 of frame header, because of webrtc shift
+                    frame_header[0] = 0;
+                    frame_header[1] = 0;
+                    frame_header[2] = 0;
+                    frame_header[3] = 1;
+                    frame_header[4] = 65;
 
                     // Copy after freeswitch_trailer_size until len_unencrypted_bytes
-                	copy_h264_frame_header((uint8_t *)temp_frameDec.data, len_unencrypted_bytes, freeswitch_trailer_size, webrtc_shift_size, frame_header,false);
+                    copy_h264_frame_header((uint8_t *)temp_frameDec.data, len_unencrypted_bytes, freeswitch_trailer_size, webrtc_shift_size, frame_header, false);
 
-					//Show frame header
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header in CONTINOUS frame: ");
-					log_bytes(frame_header, len_unencrypted_bytes);
+                    // Show frame header
+                    // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame header in CONTINUOUS frame: ");
+                    // log_bytes(frame_header, len_unencrypted_bytes);
 
                     // Extract IV first
                     iv_start = actualFrame->datalen - frame_trailer_size - iv_len;
@@ -3444,7 +3454,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                     }
                     copy_frame_iv((uint8_t *)actualFrame->data, iv_start, iv_len, iv);
                     // Append the continuous frame data to the stored start frame data
-                    new_datalen = temp_frameDec.datalen + actualFrame->datalen  - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size )+ webrtc_shift_size;
+                    new_datalen = temp_frameDec.datalen + actualFrame->datalen - (len_unencrypted_bytes + iv_len + frame_trailer_size + freeswitch_trailer_size) + webrtc_shift_size;
                     new_data = allocate_memory(new_datalen);
                     if (new_data == NULL) {
                         free_temporary_frame_dec(&temp_frameDec);
@@ -3455,19 +3465,19 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                     }
 
                     // Copy temp_frameDec to new_data without unencrypted bytes
-					start_offset = len_unencrypted_bytes - webrtc_shift_size;
-					remaining_length = temp_frameDec.datalen - start_offset;
-					if (start_offset >= 0 && start_offset + remaining_length <= temp_frameDec.datalen) {
-						memcpy(new_data, (uint8_t *)temp_frameDec.data + start_offset, remaining_length);
-					} else {
-						// Handle the error: out of bounds
-						free(new_data);
-						free_temporary_frame_dec(&temp_frameDec);
-						free_temp_h264_header_dec(&temp_h264_headerDec);
-						free(frame_header);
-						free(iv);
-						return;
-					}
+                    start_offset = len_unencrypted_bytes - webrtc_shift_size;
+                    remaining_length = temp_frameDec.datalen - start_offset;
+                    if (start_offset >= 0 && start_offset + remaining_length <= temp_frameDec.datalen) {
+                        memcpy(new_data, (uint8_t *)temp_frameDec.data + start_offset, remaining_length);
+                    } else {
+                        // Handle the error: out of bounds
+                        free(new_data);
+                        free_temporary_frame_dec(&temp_frameDec);
+                        free_temp_h264_header_dec(&temp_h264_headerDec);
+                        free(frame_header);
+                        free(iv);
+                        return;
+                    }
 
                     // Get all current payload because unencrypted bytes are at startFrame
                     payload_length = actualFrame->datalen - (iv_len + frame_trailer_size + freeswitch_trailer_size);
@@ -3486,21 +3496,9 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                     // Append payload to new_data
                     memcpy(new_data + remaining_length, payload, payload_length);
 
-					//Log first 10 of new_data
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "First New Data in continue frame: ");
-					log_bytes(new_data, 10);
-
-					//Log last 10 of new_fata
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Last New Data in continue frame: ");
-					log_bytes(new_data + new_datalen - 10, 10);
-					
-					//Log len of newdata
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "New Data len in continue frame: %zu\n", new_datalen);
-
-					// Allocate memory for decrypted_payload
-
-					decrypted_payload = allocate_memory(new_datalen);
-					if (decrypted_payload == NULL) {
+                    // Allocate memory for decrypted_payload
+                    decrypted_payload = allocate_memory(new_datalen);
+                    if (decrypted_payload == NULL) {
                         free(new_data);
                         free_temporary_frame_dec(&temp_frameDec);
                         free_temp_h264_header_dec(&temp_h264_headerDec);
@@ -3517,78 +3515,79 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                     if (plaintext_len > 0) {
                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Continue Frame successful\n");
                         // Allocate memory for the new decrypted frame
-						free(decrypted_frame);
-                        decrypted_frame = allocate_memory(freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len);
+                        decrypted_frame = allocate_memory(freeswitch_trailer_size + (len_unencrypted_bytes - webrtc_shift_size) + plaintext_len);
                         if (decrypted_frame == NULL) {
-							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Error in allocate mmory for decrypted_frame 1\n");
+                            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Error in allocate memory for decrypted_frame 1\n");
                             free_temporary_frame_dec(&temp_frameDec);
                             free_temp_h264_header_dec(&temp_h264_headerDec);
                             free(new_data);
                             free(frame_header);
                             free(iv);
                             free(payload);
-							free(decrypted_payload);
+                            free(decrypted_payload);
                             return; // Memory allocation failed
                         }
 
-                        // Copy freeswitch trailer
-						memcpy(decrypted_frame, temp_h264_headerDec.data, freeswitch_trailer_size);
+                        // Allocate memory for header_without_webrtc
+                        header_without_webrtc = allocate_memory(header_without_webrtc_len_continue_frame);
+                        if (header_without_webrtc == NULL) {
+                            free(new_data);
+                            free(frame_header);
+                            free(iv);
+                            free(payload);
+                            free(decrypted_payload);
+                            free(decrypted_frame);
+                            return; // Memory allocation failed
+                        }
+                        memcpy(header_without_webrtc, frame_header + webrtc_shift_size, header_without_webrtc_len_continue_frame);
 
-                        // Copy frame header
-                        memcpy(decrypted_frame + freeswitch_trailer_size, frame_header + webrtc_shift_size, len_unencrypted_bytes - webrtc_shift_size);
+                        // Copy temp_h264_headerDec to decrypted_frame
+                        memcpy(decrypted_frame, temp_h264_headerDec.data, temp_h264_headerDec.datalen);
 
-                        // Copy decrypted payload
-                        memcpy(decrypted_frame + freeswitch_trailer_size + len_unencrypted_bytes - webrtc_shift_size , decrypted_payload, plaintext_len);
+                        // Copy header_without_webrtc to decrypted_frame
+                        memcpy(decrypted_frame + temp_h264_headerDec.datalen, header_without_webrtc, header_without_webrtc_len_continue_frame);
+
+                        // Copy decrypted_payload to decrypted_frame
+                        memcpy(decrypted_frame + temp_h264_headerDec.datalen + header_without_webrtc_len_continue_frame, decrypted_payload, plaintext_len);
+
 
                         // Clear any remaining part of the original frame data to avoid leftover data causing noise
                         memset(actualFrame->data, 0xFF, actualFrame->buflen);
 
-                        // Replace the original frame data with the decrypted frame data
-                        memcpy(actualFrame->data, decrypted_frame, freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size);
-                        actualFrame->datalen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size;
-                        actualFrame->buflen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size;
-						actualFrame->packetlen = freeswitch_trailer_size + len_unencrypted_bytes + plaintext_len - webrtc_shift_size;
-
-						//Log first 10 decrypted_frame
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "decrypted_frame Continue frame: ");
-						log_bytes(decrypted_frame, 10);
-						//Log decrypted_frame len
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "decrypted_frame Continue frame len: %d\n", actualFrame->datalen);
-
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Replacing actual frame success: ");
+                        // Replace actual frame data with decrypted_frame
+                        memcpy(actualFrame->data, decrypted_frame, temp_h264_headerDec.datalen + header_without_webrtc_len_continue_frame + plaintext_len);
+                        actualFrame->datalen = temp_h264_headerDec.datalen + header_without_webrtc_len_continue_frame + plaintext_len;
+                        actualFrame->buflen = temp_h264_headerDec.datalen + header_without_webrtc_len_continue_frame + plaintext_len;
 
                         free(decrypted_frame);
-                    }else{
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Continue Frame failed\n");
-					}
+                        free(header_without_webrtc);
 
-
+                    } else {
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Decryption Continue Frame failed\n");
+                    }
 
                     free(frame_header);
                     free(iv);
                     free(payload);
                     free(new_data);
-					free(decrypted_payload);
+                    free(decrypted_payload);
 
-					// Free temp_frameDec after processing
+                    // Free temp_frameDec after processing
                     free_temporary_frame_dec(&temp_frameDec);
                     free_temp_h264_header_dec(&temp_h264_headerDec);
 
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Freeing memory success: ");
-
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Freeing memory success: ");
                 }
             }
             return;
         } else {
-			//Also log iv_len
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Not a start or continue frame, IV len is %zu\n", iv_len);	
-			free_temporary_frame_dec(&temp_frameDec);
-			free_temp_h264_header_dec(&temp_h264_headerDec);
+            // Also log iv_len
+            free_temporary_frame_dec(&temp_frameDec);
+            free_temp_h264_header_dec(&temp_h264_headerDec);
             return;
         }
     }
 }
-
 
 
 void encrypt_frame(switch_frame_t **frame, switch_io_flag_t flags, int stream_id, switch_media_type_t type, const uint8_t encryptionKey[]) {

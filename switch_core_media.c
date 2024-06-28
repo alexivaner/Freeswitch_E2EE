@@ -105,7 +105,8 @@ static temporary_frame_t temp_frameDec = {NULL, 0, 0};
 static temporary_frame_t temp_h264_headerDec = {NULL, 0, 0};
 static temporary_frame_t temp_frameEnc = {NULL, 0, 0};
 static temporary_frame_t temp_h264_headerEnc = {NULL, 0, 0};
-static uint8_t IV_video[16];
+static uint8_t IV_video_decrypt[16];
+// static uint8_t IV_video_encrypt[16];
 //TODO End IVAN
 
 struct media_helper {
@@ -3141,7 +3142,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
 
         if (get_frame_type(actualFrame->data) == FRAME_TYPE_START) {
 			for (int i = 0; i < 16; ++i) {
-                IV_video[i] = 68;
+                IV_video_decrypt[i] = 68;
             }
 
             frame_header_length = len_unencrypted_bytes - webrtc_shift_size;
@@ -3174,7 +3175,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                 return;
             }
 
-            plaintext_len = decrypt(encryptionKey, temp_frameDec.data, temp_frameDec.datalen, IV_video, frame_header, frame_header_length, decrypted_payload);
+            plaintext_len = decrypt(encryptionKey, temp_frameDec.data, temp_frameDec.datalen, IV_video_decrypt, frame_header, frame_header_length, decrypted_payload);
 
             if (plaintext_len > 0) {
                 decrypted_frame = allocate_memory(len_unencrypted_bytes + plaintext_len);
@@ -3220,7 +3221,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
                 return;
             }
 
-            plaintext_len = decrypt(encryptionKey, payload, payload_length, IV_video, NULL, 0, decrypted_payload);
+            plaintext_len = decrypt(encryptionKey, payload, payload_length, IV_video_decrypt, NULL, 0, decrypted_payload);
 
             if (plaintext_len > 0) {
                 memcpy((uint8_t *)actualFrame->data + freeswitch_trailer_size, decrypted_payload + plaintext_len - real_payload_length, real_payload_length);
@@ -3241,7 +3242,7 @@ void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
         uint8_t iv[16];
         uint8_t *payload = NULL;
         uint8_t *encrypted_payload = NULL;
-        uint8_t *encrypted_frame = NULL;
+        // uint8_t *encrypted_frame = NULL;
         size_t len_unencrypted_bytes = 1;
         int encrypted_len = 0;
         size_t payload_length = 0;
@@ -3265,23 +3266,13 @@ void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
         }
 
         encrypted_len = encrypt(encryptionKey, payload, payload_length, iv, NULL, 0, encrypted_payload);
-
-		encrypted_frame = allocate_memory(len_unencrypted_bytes + encrypted_len);
-        if (encrypted_frame == NULL) {
-            free(payload);
-            free(encrypted_payload);
-            return;
-        }
-
-        memcpy(encrypted_frame, encrypted_payload, encrypted_len);
-
+		
         memset(actualFrame->data, 0, actualFrame->buflen);
-        memcpy((uint8_t *)actualFrame->data+len_unencrypted_bytes, encrypted_frame, encrypted_len);
+        memcpy((uint8_t *)actualFrame->data+len_unencrypted_bytes, encrypted_payload, encrypted_len);
         actualFrame->datalen = len_unencrypted_bytes + encrypted_len;
         actualFrame->buflen = len_unencrypted_bytes + encrypted_len;
         actualFrame->packetlen = len_unencrypted_bytes + encrypted_len;
 
-        free(encrypted_frame);
         free(payload);
         free(encrypted_payload);
     }
@@ -3307,6 +3298,7 @@ void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 // 		size_t webrtc_shift_size = 5;
 //         // // uint8_t encrypted_payload[20000];
 //         size_t len_unencrypted_bytes = 12;
+// 		size_t payload_start = 0
 //         // // int encrypted_len = 0;
 //         // // size_t payload_length = 0;
 //         // // size_t sums_of_iv = 0;
@@ -3323,19 +3315,37 @@ void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 // 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Frame length before encrypt: %d\n", actualFrame->datalen);
 // 			log_bytes((uint8_t*)actualFrame->data, 20);
 			
+// 			//Copy actual frame to payload
+// 			payload_start = len_unencrypted_bytes - webrtc_shift_size + freeswitch_trailer_size;
+// 			payload_length = actualFrame->datalen - payload_start;
+// 			payload = allocate_memory(payload_length);
+// 			if (payload == NULL) {
+// 				free_temporary_frame_enc();
+// 				return;
+// 			}
+// 			copy_frame_payload(actualFrame->data, payload_start, payload_length, payload);
+
+// 			//Assign IV here
+// 			for (int i = 0; i < 16; ++i) {
+// 				IV_video_encrypt[i] = 68;
+// 			}
+
+// 			encrypted_payload = allocate_memory(payload_length);
+// 			if (encrypted_payload == NULL) {
+// 				free(payload);
+// 				return;
+// 			}
+// 			encrypted_len = encrypt(encryptionKey, payload, payload_length, IV_video_encrypt, NULL, 0, encrypted_payload);
+
+
 // 			//Copy frame payload temp_frameEnc
-// 			temporary_data_len = actualFrame->datalen - freeswitch_trailer_size;
-// 			temp_frameEnc.datalen = temporary_data_len;
-// 			temp_frameEnc.buflen = temporary_data_len;
-// 			temp_frameEnc.data = allocate_memory(temporary_data_len);
+// 			temp_frameEnc.datalen = payload_length;
+// 			temp_frameEnc.buflen = payload_length;
+// 			temp_frameEnc.data = allocate_memory(payload_length);
 // 			if (temp_frameEnc.data == NULL) {
 // 				return;
 // 			}
-
-// 			memcpy(temp_frameEnc.data, (uint8_t *)actualFrame->data + freeswitch_trailer_size, temporary_data_len);
-			
-			
-			
+// 			memcpy(temp_frameEnc.data, (uint8_t *)actualFrame->data + payload_start, payload_length);
 		
 // 		}else if(get_frame_type(actualFrame->data) == FRAME_TYPE_CONTINUE || get_frame_type(actualFrame->data) == FRAME_TYPE_CLOSE){
 // 			//Log continue frame first 20 frame

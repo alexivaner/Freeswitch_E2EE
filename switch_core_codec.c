@@ -1123,7 +1123,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_codec_encode_video(switch_codec_t *c
 SWITCH_DECLARE(switch_status_t) switch_core_codec_decode_video(switch_codec_t *codec, switch_frame_t *frame)
 {
 	switch_status_t status = SWITCH_STATUS_FALSE;
-
 	switch_assert(codec != NULL);
 	switch_assert(frame != NULL);
 

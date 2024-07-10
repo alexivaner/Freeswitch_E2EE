@@ -107,6 +107,10 @@ static temporary_frame_t temp_frameEnc = {NULL, 0, 0};
 static temporary_frame_t temp_h264_headerEnc = {NULL, 0, 0};
 static uint8_t IV_video_decrypt[16];
 static uint8_t IV_video_encrypt[16];
+
+//Boolean must_encrypt
+static bool must_encrypt = false;
+
 //TODO End IVAN
 
 struct media_helper {
@@ -2931,6 +2935,32 @@ frame_type_t get_frame_type(const uint8_t *frame_data) {
 
 
 
+// void find_specific_nal_units(const uint8_t *frame_data, size_t frame_length) {
+//     size_t i = 0;
+//     size_t start, end, j;
+//     uint8_t nal_unit_type;
+    
+//     for (i = 0; i < frame_length - 1; i++) {
+//         nal_unit_type = frame_data[i + 1];
+//         if ((nal_unit_type == 65 || nal_unit_type == 1 || nal_unit_type == 129) && (i == 0 || frame_data[i] == 0x00)) {
+//             printf("Found NAL Unit Type %d at position %zu\n", nal_unit_type, i);
+			
+// 			//Log using freeswit
+// 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Found NAL Unit Type %d at position %zu\n", nal_unit_type, i);
+
+//             printf("Data around this NAL unit: ");
+//             start = (i >= 10) ? i - 10 : 0;
+//             end = (i + 20 < frame_length) ? i + 20 : frame_length;
+//             for (j = start; j < end; j++) {
+//                 printf("%02X ", frame_data[j]);
+//             }
+//             printf("\n");
+//         }
+//     }
+// }
+
+
+
 void free_temporary_frame_dec() {
     if (temp_frameDec.data != NULL) {
         free(temp_frameDec.data);
@@ -3302,16 +3332,32 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
         size_t len_unencrypted_bytes = 12;
 		size_t payload_start = 0;
 
-		// uint8_t *decrypted_payload = NULL;
-		// int decrypted_len = 0;
+		uint8_t *decrypted_payload = NULL;
+		int decrypted_len = 0;
+
+		//Handling sps and pps
+		uint8_t *frame_data = (uint8_t *)actualFrame->data;  // Cast data to uint8_t *
+		uint8_t nal_unit_type = frame_data[4] & 0x1F;  // Extract NAL unit type from the header
 
 		if(get_frame_type(actualFrame->data) == FRAME_TYPE_START){
+			// Check NAL unit type and handle accordingly
+			if (nal_unit_type == 7 || nal_unit_type == 8){
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] SPS or PPS NAL unit detected, skipping encryption\n");
+				must_encrypt = false;
+				return;
+			}
+
+			must_encrypt = true;
+
 			//Log 10 first start frame
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Frame length before encrypt: %d\n", actualFrame->datalen);
-			// log_bytes((uint8_t*)actualFrame->data, 20);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Frame length before encrypt: %d\n", actualFrame->datalen);
+			log_bytes((uint8_t*)actualFrame->data, 20);
 
+			//Log 10 last start frame
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Start Frame before encrypt: ");
+			log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 20, 20);
 
-			//Copy actual frame to payload
+			// //Copy actual frame to payload
 			payload_start = len_unencrypted_bytes - webrtc_shift_size + freeswitch_trailer_size;
 			payload_length = actualFrame->datalen - payload_start;
 			payload = allocate_memory(payload_length);
@@ -3321,7 +3367,7 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 			}
 			copy_frame_payload(actualFrame->data, payload_start, payload_length, payload);
 
-			//Copy frame payload temp_frameEnc to use for encrypt in continue frame
+			// //Copy frame payload temp_frameEnc to use for encrypt in continue frame
 			temp_frameEnc.datalen = payload_length;
 			temp_frameEnc.buflen = payload_length;
 			temp_frameEnc.data = allocate_memory(payload_length);
@@ -3342,7 +3388,7 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 			}
 			encrypted_len = encrypt(encryptionKey, payload, payload_length, IV_video_encrypt, NULL, 0, encrypted_payload);
 
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Frame length after encrypt: %d\n", encrypted_len);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Frame length after encrypt: %d\n", encrypted_len);
 			// log_bytes(encrypted_payload, 20);
 
 			// //Log last 20 after encrypt
@@ -3365,19 +3411,35 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Actual Frame length after encrypt: %d\n", actualFrame->datalen);
 			log_bytes((uint8_t*)actualFrame->data, 20);
 
-			
-		
-		}else if(get_frame_type(actualFrame->data) == FRAME_TYPE_CONTINUE || get_frame_type(actualFrame->data) == FRAME_TYPE_CLOSE){
-			//Log continue frame first 20 frame
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First Continue Frame length before encrypt: %d\n", actualFrame->datalen);
-			// log_bytes((uint8_t*)actualFrame->data, 20);
+			//Log last 20 actual frame 
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Start Frame after encrypt: ");
+			log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 20, 20);
 
-			// // Log continue frame last 20 frame
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Continue Frame before encrypt: ");
-			// log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 20, 20);
-			
+			//Skip start frame
+			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Skip encrypting start frame\n");
+
+		}else if(must_encrypt && (get_frame_type(actualFrame->data) == FRAME_TYPE_CONTINUE || get_frame_type(actualFrame->data) == FRAME_TYPE_CLOSE)){
+		// }else if(get_frame_type(actualFrame->data) == FRAME_TYPE_CLOSE){
+
+			// //Log continue frame first 20 frame
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First Continue Frame length before encrypt: %d\n", actualFrame->datalen);
+			log_bytes((uint8_t*)actualFrame->data, 20);
+
+			// Log continue frame last 20 frame
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Continue Frame before encrypt: ");
+			log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 20, 20);
+
 			//Copy actual frame to payload
-			payload_length = temp_frameEnc.datalen + actualFrame->datalen - freeswitch_trailer_size;
+			payload_start = len_unencrypted_bytes+freeswitch_trailer_size;
+
+			//Check actual->datalen first
+			if(actualFrame->datalen < payload_start){
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Continue Frame length less than payload start\n");
+				return;
+			}
+			payload_length = temp_frameEnc.datalen + actualFrame->datalen - payload_start;
+			
+			// payload_length = actualFrame->datalen - payload_start;
 			payload = allocate_memory(payload_length);
 			if (payload == NULL) {
 				free_temporary_frame_enc();
@@ -3388,7 +3450,9 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 			memcpy(payload, temp_frameEnc.data, temp_frameEnc.datalen);
 
 			//Append current frame to payload
-			memcpy(payload + temp_frameEnc.datalen, (uint8_t *)actualFrame->data + freeswitch_trailer_size, actualFrame->datalen - freeswitch_trailer_size);
+			memcpy(payload + temp_frameEnc.datalen, (uint8_t *)actualFrame->data + payload_start, actualFrame->datalen - payload_start);
+			// memcpy(payload, (uint8_t *)actualFrame->data + payload_start, actualFrame->datalen - payload_start);
+
 
 			//Encrypt payload
 			encrypted_payload = allocate_memory(payload_length);
@@ -3406,34 +3470,40 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 				return;
 			}
 
+			//Log encrypted len in continue frame
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Continue Frame length after encrypt: %d\n", encrypted_len);
+
 			
 			//Replace actualFrame with encrypted payload
-			memcpy((uint8_t *)actualFrame->data + freeswitch_trailer_size, encrypted_payload + (encrypted_len - (actualFrame->datalen - freeswitch_trailer_size)), actualFrame->datalen - freeswitch_trailer_size);
+			memcpy((uint8_t *)actualFrame->data + payload_start, encrypted_payload + (encrypted_len - (actualFrame->datalen - payload_start)), actualFrame->datalen - payload_start);
+
+			// memcpy((uint8_t *)actualFrame->data + payload_start, encrypted_payload, encrypted_len);
+
 			actualFrame->datalen = actualFrame->datalen;
 			actualFrame->buflen = actualFrame->datalen;
 
 			// //TODO delet later Try to decrypt payload just for testing
-			// decrypted_payload = allocate_memory(payload_length);
-			// if (decrypted_payload == NULL) {
-			// 	free(payload);
-			// 	free(encrypted_payload);
-			// 	free_temporary_frame_enc();
-			// 	return;
-			// }
-			// decrypted_len = decrypt(encryptionKey, encrypted_payload, encrypted_len, IV_video_encrypt, NULL, 0, decrypted_payload);
-			// if(decrypted_len>0){
-			// 	//Log first 10 frame of decrypted payload
-			// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan_TEST] First 10 frame of decrypted payload: ");
-			// 	log_bytes(decrypted_payload, 10);
-			// }
+			decrypted_payload = allocate_memory(payload_length);
+			if (decrypted_payload == NULL) {
+				free(payload);
+				free(encrypted_payload);
+				free_temporary_frame_enc();
+				return;
+			}
+			decrypted_len = decrypt(encryptionKey, encrypted_payload, encrypted_len, IV_video_encrypt, NULL, 0, decrypted_payload);
+			if(decrypted_len>0){
+				//Log first 10 frame of decrypted payload
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan_TEST] First 10 frame of decrypted payload: ");
+				log_bytes(decrypted_payload, 10);
+			}
 
-			// //Log first 20 actual frame after encrypption
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First 20 Continue Frame length after encrypt: %d\n", actualFrame->datalen);
-			// log_bytes((uint8_t*)actualFrame->data, 20);
+			//Log first 20 actual frame after encrypption
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First 20 Continue Frame length after encrypt: %d\n", actualFrame->datalen);
+			log_bytes((uint8_t*)actualFrame->data, 20);
 
-			// //Log last 20 actualFrame after encryption
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Continue Frame after encrypt: ");
-			// log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 20, 20);
+			//Log last 20 actualFrame after encryption
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Continue Frame after encrypt: ");
+			log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 20, 20);
 			// //Log len of temp_frameEnc len
 			
 			//Copy frame payload temp_frameEnc to use for encrypt in next continue frame
@@ -3446,7 +3516,8 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 			memcpy(temp_frameEnc.data, payload, payload_length);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Temp Frame Enc length: %zu\n", temp_frameEnc.datalen);			
 
-			
+			//Print skip process
+			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Skip encrypting continue frame\n");
 		}
 
     }
@@ -4127,10 +4198,10 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 
 
 	//TODO: Ivan - Modify getting encryption key here
-	const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
-	switch_channel_t *channel = switch_core_session_get_channel(session);
-	//Get channel name
-	const char *channel_name = switch_channel_get_name(channel);
+	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	// switch_channel_t *channel = switch_core_session_get_channel(session);
+	// //Get channel name
+	// const char *channel_name = switch_channel_get_name(channel);
 	//TODO: Ivan - End of modification
 
 	switch_assert(session);
@@ -4151,16 +4222,10 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 		}
 		
 		//TODO IVAN
-       if (strstr(channel_name, "sofia/internal/1016") != NULL) {
-            // Ensure frame is encoded before encryption
-			encrypt_video_frame(&frame, flags, stream_id, type, encryptionKey);
-            // if (frame->codec && frame->codec->implementation && frame->codec->implementation->encode) {
-            //     encrypt_video_frame(&frame, flags, stream_id, type, encryptionKey);
-            // } else {
-            //     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Video frame encoding failed.\n");
-            //     return SWITCH_STATUS_GENERR;
-            // }
-        }
+    //    if (strstr(channel_name, "sofia/internal/1016") != NULL) {
+    //         // Ensure frame is encoded before encryption
+	// 		encrypt_video_frame(&frame, flags, stream_id, type, encryptionKey);
+    //     }
 		//TODO end
 
 	}
@@ -15438,57 +15503,78 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 	switch_rtp_engine_t *v_engine = NULL;
 	switch_bool_t need_free = SWITCH_FALSE;
 	//TODO: Ivan - Modify getting encryption key here
-	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
-	// switch_channel_t *channel = switch_core_session_get_channel(session);
-	// //Get channel name
-	// const char *channel_name = switch_channel_get_name(channel);
+	const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	
+	//Get channel name
+	const char *channel_name = switch_channel_get_name(channel);
 	//TODO: Ivan - End of modification
 
-	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG1, "Ivan Video frame write\n");
+	//if channel name include 1016
+
+	if(strstr(channel_name, "1016") != NULL){
+		//Log channel name
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Channel name of video core session %s\n", channel_name);
+		//Log frame len
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame len of video core session %d\n", frame->datalen);
+		log_bytes(frame->data, 20);
+		
+		//Encrypt video frame
+		encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
+	}
 
 
 	switch_assert(session);
 
 	if (!(smh = session->media_handle)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 1 %s\n", channel_name);
 		return SWITCH_STATUS_FALSE;
 	}
 
 	if (switch_channel_down(session->channel)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 2 %s\n", channel_name);
 		return SWITCH_STATUS_FALSE;
 	}
 
 	if (!codec) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_WARNING, "%s has no video codec\n", switch_core_session_get_name(session));
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 3 %s\n", channel_name);
 		return SWITCH_STATUS_FALSE;
 	}
 
 
 	if (switch_core_session_media_flow(session, SWITCH_MEDIA_TYPE_VIDEO) == SWITCH_MEDIA_FLOW_RECVONLY || switch_core_session_media_flow(session, SWITCH_MEDIA_TYPE_VIDEO) == SWITCH_MEDIA_FLOW_INACTIVE) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG3, "Writing video to RECVONLY/INACTIVE session\n");
+		// switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Writing video to RECVONLY/INACTIVE session\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 4 %s\n", channel_name);
 		return SWITCH_STATUS_SUCCESS;
 	}
 
 	if (switch_channel_test_flag(session->channel, CF_VIDEO_PAUSE_WRITE)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 5 %s\n", channel_name);
 		return SWITCH_STATUS_SUCCESS;
 	}
 
 	if (!(switch_channel_test_flag(session->channel, CF_VIDEO_READY) || (flags & SWITCH_IO_FLAG_FORCE))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 6 %s\n", channel_name);
 		return SWITCH_STATUS_SUCCESS;
 	}
 
 	if (smh->write_mutex[SWITCH_MEDIA_TYPE_VIDEO] && switch_mutex_trylock(smh->write_mutex[SWITCH_MEDIA_TYPE_VIDEO]) != SWITCH_STATUS_SUCCESS) {
 		/* return CNG, another thread is already writing  */
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG1, "%s is already being written to for %s\n",
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s is already being written to for %s\n",
 						  switch_channel_get_name(session->channel), type2str(SWITCH_MEDIA_TYPE_VIDEO));
 		return SWITCH_STATUS_INUSE;
 	}
 
 	v_engine = &smh->engines[SWITCH_MEDIA_TYPE_VIDEO];
 	if (v_engine->thread_write_lock && v_engine->thread_write_lock != switch_thread_self()) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 7 %s\n", channel_name);
 		switch_goto_status(SWITCH_STATUS_SUCCESS, done);
 	}
 
 	if (!smh->video_init && smh->mparams->video_key_first && (now - smh->video_last_key_time) > smh->mparams->video_key_first) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 8 %s\n", channel_name);
+
 		switch_core_media_gen_key_frame(session);
 
 		if (smh->video_last_key_time) {
@@ -15499,6 +15585,8 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 	}
 
 	if (smh->mparams->video_key_freq && (now - smh->video_last_key_time) > smh->mparams->video_key_freq) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 9 %s\n", channel_name);
+
 		switch_core_media_gen_key_frame(smh->session);
 		smh->video_last_key_time = now;
 	}
@@ -15608,9 +15696,15 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 
 	}
 
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 10 %s\n", channel_name);
+
+
 	write_frame = *frame;
 	frame = &write_frame;
 	frame->img = img;
+
+
+	
 
 	if (!switch_test_flag(frame, SFF_USE_VIDEO_TIMESTAMP)) {
 
@@ -15636,9 +15730,12 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 		if (encode_status == SWITCH_STATUS_SUCCESS || encode_status == SWITCH_STATUS_MORE_DATA) {
 
 			//Log if encode success here
-			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG1, "Ivan Video frame encoded successfully\n");
+			//Log channel_name
 
 			switch_assert((encode_status == SWITCH_STATUS_SUCCESS && frame->m) || !frame->m);
+
+			// switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Encoded video successfully is %s\n", channel_name);
+
 
 			if (frame->flags & SFF_PICTURE_RESET) {
 				switch_core_session_video_reinit(session);
@@ -15648,6 +15745,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 			if (frame->datalen == 0) break;
 
 			switch_set_flag(frame, SFF_RAW_RTP_PARSE_FRAME);
+			
 			status = switch_core_session_write_encoded_video_frame(session, frame, flags, stream_id);
 		}
 
@@ -15656,7 +15754,8 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
  done:
 
 	//Log done
-	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG1, "Ivan Video frame write done\n");
+	//Here still noy yet encoded
+
 
 	if (smh->write_mutex[SWITCH_MEDIA_TYPE_VIDEO]) {
 		switch_mutex_unlock(smh->write_mutex[SWITCH_MEDIA_TYPE_VIDEO]);

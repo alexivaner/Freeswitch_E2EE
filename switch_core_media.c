@@ -3111,11 +3111,16 @@ void decrypt_audio_frame(switch_core_session_t *session, switch_frame_t **frame,
         uint8_t iv[16];
         uint8_t *frame_header, *payload, *decrypted_payload, *decrypted_frame;
         int plaintext_len;
-        int i;
 
-        for (i = 0; i < 16; ++i) {
-            iv[i] = 68;
-        }
+		//Log 20 first byte
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First 20 bytes of audio frame: ");
+		log_bytes(actualFrame->data, 20);
+
+		GenerateIV(actualFrame->data, len_unencrypted_bytes, iv);
+		
+		//Log audio decrypt IV
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] IV Audio Frame Decrypt: ");
+		log_bytes(iv, 16);
 
         frame_header = allocate_memory(len_unencrypted_bytes);
         if (frame_header == NULL) {
@@ -3178,9 +3183,16 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
         int plaintext_len;
 
         if (get_frame_type(actualFrame->data) == FRAME_TYPE_START) {
-			for (int i = 0; i < 16; ++i) {
-                IV_video_decrypt[i] = 68;
-            }
+			GenerateIV((uint8_t *)actualFrame->data + freeswitch_trailer_size,len_unencrypted_bytes - webrtc_shift_size, IV_video_decrypt);
+
+			//Log first 20 bytes of frame
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First 20 bytes of video frame: ");
+			log_bytes(actualFrame->data, 20);
+
+			//Log IV here
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] IV Video Frame Decrypt: ");
+			log_bytes(IV_video_decrypt, 16);
+
 
             frame_header_length = len_unencrypted_bytes - webrtc_shift_size;
             frame_header = allocate_memory(frame_header_length);
@@ -3294,9 +3306,9 @@ void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 		//Generate and log IV here
 		GenerateIV(actualFrame->data, len_unencrypted_bytes, iv);
 
-		//Log IV
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] IV Audio Frame: ");
-		log_bytes(iv, 16);
+		// //Log IV
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] IV Audio Frame: ");
+		// log_bytes(iv, 16);
 
         encrypted_payload = allocate_memory(payload_length);
         if (encrypted_payload == NULL) {
@@ -3391,8 +3403,8 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 
 			//Generate IV here and log IV
 			GenerateIV((uint8_t *)actualFrame->data + freeswitch_trailer_size,len_unencrypted_bytes - webrtc_shift_size, IV_video_encrypt);
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] IV Start Frame: ");
-			log_bytes(IV_video_encrypt, 16);
+			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] IV Start Frame: ");
+			// log_bytes(IV_video_encrypt, 16);
 
 			encrypted_payload = allocate_memory(payload_length);
 			if (encrypted_payload == NULL) {
@@ -15469,25 +15481,9 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_encoded_video_frame(sw
 
 	//if channle name contain 1016
 	if(strstr(channel_name, "1016") != NULL){
-		// //Log channel name
-		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "switch_core_session_write_encoded_video_frame %s\n", channel_name);
-		// //Log frame len
-		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "switch_core_session_write_encoded_video_frame n %d\n", frame->datalen);
-		// log_bytes(frame->data, 20);
-
+		
 		encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
 
-		//Make sure codec first
-		// if (!codec) {
-		// 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_WARNING, "%s has no video codec\n", switch_core_session_get_name(session));			return SWITCH_STATUS_FALSE;
-		// }else{
-		// 	//Encode video first
-		// 	frame->data = ((unsigned char *)frame->packet) + 12;
-		// 	frame->datalen = SWITCH_DEFAULT_VIDEO_SIZE;
-		// 	encode_status = switch_core_codec_encode_video(codec, frame);
-
-		// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Encode status %d\n", encode_status);
-		// }
 	}
 	//TODO End IVan
 
@@ -15548,73 +15544,33 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 	switch_frame_t write_frame = {0};
 	switch_rtp_engine_t *v_engine = NULL;
 	switch_bool_t need_free = SWITCH_FALSE;
-	//TODO: Ivan - Modify getting encryption key here
-	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
-	switch_channel_t *channel = switch_core_session_get_channel(session);
-	
-	// //Get channel name
-	const char *channel_name = switch_channel_get_name(channel);
-	//TODO: Ivan - End of modification
-
-	//if channel name include 1016
-
-	// if(strstr(channel_name, "1016") != NULL){
-		//Log channel name
-		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Channel name of video core session %s\n", channel_name);
-		// //Log frame len
-		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Frame len of video core session %d\n", frame->datalen);
-		// log_bytes(frame->data, 20);
-
-		//Make sure codec first
-		// if (!codec) {
-		// 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_WARNING, "%s has no video codec\n", switch_core_session_get_name(session));			return SWITCH_STATUS_FALSE;
-		// }else{
-		// 	//Encode video first
-		// 	frame->data = ((unsigned char *)frame->packet) + 12;
-		// 	frame->datalen = SWITCH_DEFAULT_VIDEO_SIZE;
-		// 	encode_status = switch_core_codec_encode_video(codec, frame);
-
-		// 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Encode status %d\n", encode_status);
-		// }
-
-
-		//Encrypt video frame
-		// encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
-	// }
-
 
 	switch_assert(session);
 
 	if (!(smh = session->media_handle)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 1 %s\n", channel_name);
 		return SWITCH_STATUS_FALSE;
 	}
 
 	if (switch_channel_down(session->channel)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 2 %s\n", channel_name);
 		return SWITCH_STATUS_FALSE;
 	}
 
 	if (!codec) {
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_WARNING, "%s has no video codec\n", switch_core_session_get_name(session));
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 3 %s\n", channel_name);
 		return SWITCH_STATUS_FALSE;
 	}
 
 
 	if (switch_core_session_media_flow(session, SWITCH_MEDIA_TYPE_VIDEO) == SWITCH_MEDIA_FLOW_RECVONLY || switch_core_session_media_flow(session, SWITCH_MEDIA_TYPE_VIDEO) == SWITCH_MEDIA_FLOW_INACTIVE) {
 		// switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Writing video to RECVONLY/INACTIVE session\n");
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 4 %s\n", channel_name);
 		return SWITCH_STATUS_SUCCESS;
 	}
 
 	if (switch_channel_test_flag(session->channel, CF_VIDEO_PAUSE_WRITE)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 5 %s\n", channel_name);
 		return SWITCH_STATUS_SUCCESS;
 	}
 
 	if (!(switch_channel_test_flag(session->channel, CF_VIDEO_READY) || (flags & SWITCH_IO_FLAG_FORCE))) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 6 %s\n", channel_name);
 		return SWITCH_STATUS_SUCCESS;
 	}
 
@@ -15627,13 +15583,10 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 
 	v_engine = &smh->engines[SWITCH_MEDIA_TYPE_VIDEO];
 	if (v_engine->thread_write_lock && v_engine->thread_write_lock != switch_thread_self()) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 7 %s\n", channel_name);
 		switch_goto_status(SWITCH_STATUS_SUCCESS, done);
 	}
 
 	if (!smh->video_init && smh->mparams->video_key_first && (now - smh->video_last_key_time) > smh->mparams->video_key_first) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 8 %s\n", channel_name);
-
 		switch_core_media_gen_key_frame(session);
 
 		if (smh->video_last_key_time) {
@@ -15644,8 +15597,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 	}
 
 	if (smh->mparams->video_key_freq && (now - smh->video_last_key_time) > smh->mparams->video_key_freq) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 9 %s\n", channel_name);
-
 		switch_core_media_gen_key_frame(smh->session);
 		smh->video_last_key_time = now;
 	}
@@ -15755,15 +15706,10 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 
 	}
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Ivan 10 %s\n", channel_name);
-
 
 	write_frame = *frame;
 	frame = &write_frame;
 	frame->img = img;
-
-
-	
 
 	if (!switch_test_flag(frame, SFF_USE_VIDEO_TIMESTAMP)) {
 
@@ -15788,13 +15734,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 
 		if (encode_status == SWITCH_STATUS_SUCCESS || encode_status == SWITCH_STATUS_MORE_DATA) {
 
-			//Log if encode success here
-			//Log channel_name
-
 			switch_assert((encode_status == SWITCH_STATUS_SUCCESS && frame->m) || !frame->m);
-
-			// switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Encoded video successfully is %s\n", channel_name);
-
 
 			if (frame->flags & SFF_PICTURE_RESET) {
 				switch_core_session_video_reinit(session);
@@ -15811,10 +15751,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 	} while(status == SWITCH_STATUS_SUCCESS && encode_status == SWITCH_STATUS_MORE_DATA);
 
  done:
-
-	//Log done
-	//Here still noy yet encoded
-
 
 	if (smh->write_mutex[SWITCH_MEDIA_TYPE_VIDEO]) {
 		switch_mutex_unlock(smh->write_mutex[SWITCH_MEDIA_TYPE_VIDEO]);

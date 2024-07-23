@@ -2916,11 +2916,11 @@ nal_unit_category get_nal_unit_category(const uint8_t *nal_unit) {
 
 
 // Function to check if the frame is a non-IDR slice
-bool is_non_idr_slice(const uint8_t *frame_data) {
-    // Extract the NAL unit type from frame_data[1]
-    uint8_t nal_unit_type = frame_data[1] & 0x1F;  // NAL unit type is the lower 5 bits (0x1F is 0001 1111 in binary)
-    return nal_unit_type == 1;  // Coded slice of a non-IDR picture has type 1
-}
+// bool is_non_idr_slice(const uint8_t *frame_data) {
+//     // Extract the NAL unit type from frame_data[1]
+//     uint8_t nal_unit_type = frame_data[1] & 0x1F;  // NAL unit type is the lower 5 bits (0x1F is 0001 1111 in binary)
+//     return nal_unit_type == 1;  // Coded slice of a non-IDR picture has type 1
+// }
 
 
 frame_type_t get_frame_type(const uint8_t *frame_data) {
@@ -3174,6 +3174,11 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
         size_t real_payload_length;
         int plaintext_len;
 
+		// //Log first 40 frame
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Decryptor] Frame Data with frame len %d: ", actualFrame->datalen);
+		// log_bytes(actualFrame->data, 40);
+		
+
         if (get_frame_type(actualFrame->data) == FRAME_TYPE_START) {
 			GenerateIV((uint8_t *)actualFrame->data + freeswitch_trailer_size,len_unencrypted_bytes - webrtc_shift_size, IV_video_decrypt);
 
@@ -3349,24 +3354,8 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 			log_bytes(actualFrame->data, actualFrame->datalen);
 			return;
 		}
-		// else if(!is_non_idr_slice(actualFrame->data)){
-		// 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Skip encrypting IDR frame\n");
-		// 	return;
-		// }
 
 		if(get_frame_type(actualFrame->data) == FRAME_TYPE_START){
-			//TODO DELETE LOG LATER
-			 if(!is_non_idr_slice(actualFrame->data)){
-				//Log 10 first start frame
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Frame length before encrypt: %d\n", actualFrame->datalen);
-				log_bytes((uint8_t*)actualFrame->data, 30);
-
-				//Log 10 last start frame
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 30 Start Frame before encrypt: ");
-				log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 30, 30);				// 	return;
-			}
-			// TODO END DELETE LOG LATER
-
 			//Make sure memory error not happen
 			if(actualFrame->datalen < len_unencrypted_bytes - webrtc_shift_size + freeswitch_trailer_size){
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Frame length less than 40\n");
@@ -3400,17 +3389,6 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 				return;
 			}
 			encrypted_len = encrypt(encryptionKey, payload, payload_length, IV_video_encrypt, NULL, 0, encrypted_payload);
-
-			//TODO DELETE LOG LATER
-			if(!is_non_idr_slice(actualFrame->data)){
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Frame length after encrypt: %d\n", encrypted_len);
-				log_bytes(encrypted_payload, 20);
-
-				// Log last 20 after encrypt
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Start Frame after encrypt: ");
-				log_bytes(encrypted_payload + encrypted_len - 20, 20);
-			}
-			//TODO END DELETE LATER
 			
 
 			if(encrypted_len < 0){
@@ -3425,35 +3403,11 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 			actualFrame->datalen = payload_start + encrypted_len;
 			actualFrame->buflen = payload_start + encrypted_len;
 
-			//TODO DELETE LOG LATER
-			if(!is_non_idr_slice(actualFrame->data)){
-				//Log first 20 actual frame after encrypption
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Start Actual Frame length after encrypt: %d\n", actualFrame->datalen);
-				log_bytes((uint8_t*)actualFrame->data, 20);
-
-				//Log last 20 actual frame 
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Start Frame after encrypt: ");
-				log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 20, 20);
-			}
-			//TODO END DELETE LATER
 		
 			//Skip start frame
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Skip encrypting start frame\n");
 
 		}else {
-			//TODO DELETE LOG LATER
-			if(!is_non_idr_slice(actualFrame->data)){
-				//Log continue frame first 20 frame
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First Continue Frame length before encrypt: %d\n", actualFrame->datalen);
-				log_bytes((uint8_t*)actualFrame->data, 30);
-
-				// Log continue frame last 20 frame
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Continue Frame before encrypt: ");
-				log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 30, 30);
-			}
-			//TODO END DELETE LATER
-
-
 			//Copy actual frame to payload
 			payload_start = freeswitch_trailer_size;
 
@@ -3502,18 +3456,6 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 			actualFrame->datalen = actualFrame->datalen;
 			actualFrame->buflen = actualFrame->datalen;
 
-			//TODO DELETE LOG LATER
-			if(!is_non_idr_slice(actualFrame->data)){
-				//Log first 20 actual frame after encrypption
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Continue Actual Frame length after encrypt: %d\n", actualFrame->datalen);
-				log_bytes((uint8_t*)actualFrame->data, 20);
-
-				//Log last 20 actual frame 
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Last 20 Continue Frame after encrypt: ");
-				log_bytes((uint8_t*)actualFrame->data + actualFrame->datalen - 20, 20);
-			}
-			//TODO END DELETE LATER
-
 			
 			//Copy frame payload temp_frameEnc to use for encrypt in next continue frame
 			temp_frameEnc.datalen = payload_length;
@@ -3523,7 +3465,7 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 				return;
 			}
 			memcpy(temp_frameEnc.data, payload, payload_length);
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Temp Frame Enc length: %zu\n", temp_frameEnc.datalen);			
+			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Temp Frame Enc length: %zu\n", temp_frameEnc.datalen);			
 
 			//Print skip process
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Skip encrypting continue frame\n");

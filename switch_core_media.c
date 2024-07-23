@@ -105,10 +105,6 @@ static temporary_frame_t temp_frameEnc = {NULL, 0, 0};
 static temporary_frame_t temp_h264_headerEnc = {NULL, 0, 0};
 static uint8_t IV_video_decrypt[EVP_MAX_IV_LENGTH];
 static uint8_t IV_video_encrypt[EVP_MAX_IV_LENGTH];
-
-//Boolean must_encrypt
-// static bool must_encrypt = false;
-
 //TODO End IVAN
 
 struct media_helper {
@@ -2796,18 +2792,6 @@ static void check_media_timeout_params(switch_core_session_t *session, switch_rt
 }
 
 //TODO IVAN
-void shuffle(uint8_t *array, size_t n) {
-    if (n > 1) {
-        size_t i;
-        for (i = 0; i < n - 1; i++) {
-            size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
-            uint8_t t = array[j];
-            array[j] = array[i];
-            array[i] = t;
-        }
-    }
-}
-
 // Define the GenerateIV function
 void GenerateIV(const uint8_t* unencrypted_data, size_t unencrypted_bytes, uint8_t* iv) {
     size_t iv_size = EVP_MAX_IV_LENGTH;
@@ -2816,8 +2800,6 @@ void GenerateIV(const uint8_t* unencrypted_data, size_t unencrypted_bytes, uint8
         iv[i] = unencrypted_data[i % unencrypted_bytes] * (i + 1);
     }
 }
-
-
 
 void copy_frame_trailer(const uint8_t *actual_frame_data, size_t actual_frame_size, size_t frame_trailer_size, uint8_t *frame_trailer) {
     // Calculate the starting position to copy from
@@ -2915,14 +2897,6 @@ nal_unit_category get_nal_unit_category(const uint8_t *nal_unit) {
 }
 
 
-// Function to check if the frame is a non-IDR slice
-// bool is_non_idr_slice(const uint8_t *frame_data) {
-//     // Extract the NAL unit type from frame_data[1]
-//     uint8_t nal_unit_type = frame_data[1] & 0x1F;  // NAL unit type is the lower 5 bits (0x1F is 0001 1111 in binary)
-//     return nal_unit_type == 1;  // Coded slice of a non-IDR picture has type 1
-// }
-
-
 frame_type_t get_frame_type(const uint8_t *frame_data) {
     // Extract the FU Header from frame_data[1]
     bool startBit = (frame_data[1] & 0x80) != 0;  // Start bit is the highest bit (0x80 is 1000 0000 in binary)
@@ -2938,33 +2912,6 @@ frame_type_t get_frame_type(const uint8_t *frame_data) {
         return FRAME_TYPE_INVALID;
     }
 }
-
-
-
-// void find_specific_nal_units(const uint8_t *frame_data, size_t frame_length) {
-//     size_t i = 0;
-//     size_t start, end, j;
-//     uint8_t nal_unit_type;
-    
-//     for (i = 0; i < frame_length - 1; i++) {
-//         nal_unit_type = frame_data[i + 1];
-//         if ((nal_unit_type == 65 || nal_unit_type == 1 || nal_unit_type == 129) && (i == 0 || frame_data[i] == 0x00)) {
-//             printf("Found NAL Unit Type %d at position %zu\n", nal_unit_type, i);
-			
-// 			//Log using freeswit
-// 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Found NAL Unit Type %d at position %zu\n", nal_unit_type, i);
-
-//             printf("Data around this NAL unit: ");
-//             start = (i >= 10) ? i - 10 : 0;
-//             end = (i + 20 < frame_length) ? i + 20 : frame_length;
-//             for (j = start; j < end; j++) {
-//                 printf("%02X ", frame_data[j]);
-//             }
-//             printf("\n");
-//         }
-//     }
-// }
-
 
 
 void free_temporary_frame_dec() {
@@ -3322,9 +3269,6 @@ void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
     }
 }
 
-
-
-
 void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int stream_id, switch_media_type_t type, const uint8_t encryptionKey[]) {
     if (*frame && type == SWITCH_MEDIA_TYPE_VIDEO) {
         switch_frame_t *actualFrame = *frame;
@@ -3474,7 +3418,6 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
     }
 }
 
-
 SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session_t *session, switch_frame_t **frame,
 															 switch_io_flag_t flags, int stream_id, switch_media_type_t type)
 {
@@ -3490,7 +3433,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	//Get channel name
 	const char *channel_name = switch_channel_get_name(channel);
 	//TODO: Ivan - End of modification
-
 
 	switch_assert(session);
 
@@ -3526,7 +3468,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 						  switch_channel_get_name(session->channel), type2str(type));
 		return SWITCH_STATUS_INUSE;
 	}
-
 
 	engine->read_frame.datalen = 0;
 	engine->read_frame.flags = SFF_NONE;
@@ -3566,9 +3507,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 			goto end;
 		}
 
-
-
-
 		if (type == SWITCH_MEDIA_TYPE_VIDEO) {
 			if (engine->read_frame.m) {
 				if (!smh->vid_started) {
@@ -3585,7 +3523,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 				}
 			}
 		}
-
 
 		/* re-set codec if necessary */
 		if (type != SWITCH_MEDIA_TYPE_TEXT && engine->reset_codec > 0) {
@@ -3664,8 +3601,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 			switch_goto_status(SWITCH_STATUS_SUCCESS, end);
 		}
 
-
-
 		/* Try to read an RTCP frame, if successful raise an event */
 		if (switch_rtcp_zerocopy_read_frame(engine->rtp_session, &rtcp_frame) == SWITCH_STATUS_SUCCESS) {
 			switch_event_t *event;
@@ -3742,7 +3677,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG10, "Dispatched RTCP event\n");
 			}
 		}
-
 
 		/* Fast PASS! */
 		if (switch_test_flag((&engine->read_frame), SFF_PROXY_PACKET)) {
@@ -3957,9 +3891,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		}
 	}
 
-
-
-
 	if (engine->read_frame.datalen == 0) {
 		*frame = NULL;
 	}
@@ -4052,7 +3983,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 		switch_mutex_unlock(smh->read_mutex[type]);
 	}
 
-
 	return status;
 }
 
@@ -4136,8 +4066,6 @@ static switch_status_t perform_write(switch_core_session_t *session, switch_fram
 	return status;
 }
 
-
-
 //?
 SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_session_t *session,
 												  switch_frame_t *frame, switch_io_flag_t flags, int stream_id, switch_media_type_t type)
@@ -4146,14 +4074,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 	int bytes = 0, samples = 0, frames = 0;
 	switch_rtp_engine_t *engine;
 	switch_media_handle_t *smh;
-
-
-	//TODO: Ivan - Modify getting encryption key here
-	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
-	// switch_channel_t *channel = switch_core_session_get_channel(session);
-	// //Get channel name
-	// const char *channel_name = switch_channel_get_name(channel);
-	//TODO: Ivan - End of modification
 
 	switch_assert(session);
 
@@ -4172,13 +4092,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 			return SWITCH_STATUS_SUCCESS;
 		}
 		
-		//TODO IVAN
-    //    if (strstr(channel_name, "sofia/internal/1016") != NULL) {
-    //         // Ensure frame is encoded before encryption
-	// 		encrypt_video_frame(&frame, flags, stream_id, type, encryptionKey);
-    //     }
-		//TODO end
-
 	}
 
 	if (type == SWITCH_MEDIA_TYPE_AUDIO) {
@@ -4187,7 +4100,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 		if (audio_flow != SWITCH_MEDIA_FLOW_SENDRECV && audio_flow != SWITCH_MEDIA_FLOW_SENDONLY) {
 			return SWITCH_STATUS_SUCCESS;
 		}
-
 	}
 
 	if (type != SWITCH_MEDIA_TYPE_TEXT) {
@@ -4212,7 +4124,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 				frames = 1;
 
 			samples = frames * engine->read_impl.samples_per_packet;
-			
 		}
 	}
 
@@ -15406,7 +15317,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_encoded_video_frame(sw
 
 	//if channle name contain 1016
 	if(strstr(channel_name, "1016") != NULL){
-		
 		encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
 
 	}
@@ -15487,7 +15397,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 
 
 	if (switch_core_session_media_flow(session, SWITCH_MEDIA_TYPE_VIDEO) == SWITCH_MEDIA_FLOW_RECVONLY || switch_core_session_media_flow(session, SWITCH_MEDIA_TYPE_VIDEO) == SWITCH_MEDIA_FLOW_INACTIVE) {
-		// switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "Writing video to RECVONLY/INACTIVE session\n");
 		return SWITCH_STATUS_SUCCESS;
 	}
 
@@ -15501,8 +15410,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 
 	if (smh->write_mutex[SWITCH_MEDIA_TYPE_VIDEO] && switch_mutex_trylock(smh->write_mutex[SWITCH_MEDIA_TYPE_VIDEO]) != SWITCH_STATUS_SUCCESS) {
 		/* return CNG, another thread is already writing  */
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "%s is already being written to for %s\n",
-						  switch_channel_get_name(session->channel), type2str(SWITCH_MEDIA_TYPE_VIDEO));
 		return SWITCH_STATUS_INUSE;
 	}
 
@@ -15631,7 +15538,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 
 	}
 
-
 	write_frame = *frame;
 	frame = &write_frame;
 	frame->img = img;
@@ -15669,7 +15575,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_video_frame(switch_cor
 			if (frame->datalen == 0) break;
 
 			switch_set_flag(frame, SFF_RAW_RTP_PARSE_FRAME);
-			
 			status = switch_core_session_write_encoded_video_frame(session, frame, flags, stream_id);
 		}
 
@@ -15873,11 +15778,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_read_video_frame(switch_core
 		switch_status_t decode_status;
 
 		(*frame)->img = NULL;
-
-		//TODO Ivan log something here
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Ivan Decoding video frame switch_core_media\n");
-		//TODO end
-
 
 		decode_status = switch_core_codec_decode_video((*frame)->codec, *frame);
 		if (switch_test_flag(*frame, SFF_IS_KEYFRAME)) {
@@ -16746,9 +16646,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 		// // Encrypt audio frame
 		if (strstr(channel_name, "sofia/internal/1016") != NULL) {
 			encrypt_audio_frame(&write_frame, flags, stream_id, SWITCH_MEDIA_TYPE_AUDIO, encryptionKey);
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Encrypting audio frame: ");
-			//Log write_Frame len
-			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "write_frame->datalen: %d\n", write_frame->datalen);
 		}
 		//TODO END IVAN
 
@@ -17051,8 +16948,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 			if (flag & SFF_CNG) {
 				switch_set_flag(write_frame, SFF_CNG);
 			}
-
-
 
 			status = perform_write(session, write_frame, flags, stream_id);
 			goto error;

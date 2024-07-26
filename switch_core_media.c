@@ -4074,7 +4074,6 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 	int bytes = 0, samples = 0, frames = 0;
 	switch_rtp_engine_t *engine;
 	switch_media_handle_t *smh;
-
 	switch_assert(session);
 
 	if (!(smh = session->media_handle)) {

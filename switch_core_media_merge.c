@@ -3967,7 +3967,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 
 	} else {
 		*frame = &engine->read_frame;
-		if (strstr(channel_name, "sofia/external/*3000390016") != NULL) {
+		if (strstr(channel_name, "sofia/external") != NULL) {
 			if(type == SWITCH_MEDIA_TYPE_AUDIO){
 				decrypt_audio_frame(session, frame, flags, stream_id, type, encryptionKey);
 			}
@@ -4085,20 +4085,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_write_frame(switch_core_sessio
 	int bytes = 0, samples = 0, frames = 0;
 	switch_rtp_engine_t *engine;
 	switch_media_handle_t *smh;
-	uint8_t encryptionKey[32];	// peter
-	int i;	// peter
-	char temp[10];	// peter
-	char szString[1000];	// peter
-	//TODO: Ivan - Modify getting encryption key here
-	switch_channel_t *channel = switch_core_session_get_channel(session);
-	//Get channel name
-	const char *channel_name = switch_channel_get_name(channel);
-	//TODO: Ivan - End of modification
-
 	switch_assert(session);
-
-
-
 
 	if (!(smh = session->media_handle)) {
 		return SWITCH_STATUS_FALSE;
@@ -15353,7 +15340,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_encoded_video_frame(sw
 		strcat(szString, temp);  // for test
 	}
 
-	if (strstr(channel_name, "sofia/external/*3000390016") != NULL) {
+	if (strstr(channel_name, "sofia/external") != NULL) {
 		encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
 	}
 	//TODO: Ivan - End of modification
@@ -16549,9 +16536,9 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 	int i;
 	char temp[10];
 	char szString[1000];
-	// switch_channel_t *channel = switch_core_session_get_channel(session);
-	// //Get channel name
-	// const char *channel_name = switch_channel_get_name(channel);
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	//Get channel name
+	const char *channel_name = switch_channel_get_name(channel);
 
 
 	// peter
@@ -16699,7 +16686,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 		write_frame = frame;
 		//TODO IVAN - It will run here
 		// // Encrypt audio frame
-		if (strstr(channel_name, "sofia/external/*3000390016") != NULL) {
+		if (strstr(channel_name, "sofia/external") != NULL) {
 			encrypt_audio_frame(&write_frame, flags, stream_id, SWITCH_MEDIA_TYPE_AUDIO, encryptionKey);
 		}
 		//TODO END IVAN

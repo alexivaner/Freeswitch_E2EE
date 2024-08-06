@@ -3061,6 +3061,9 @@ void decrypt_audio_frame(switch_core_session_t *session, switch_frame_t **frame,
 
 		GenerateIV(actualFrame->data, len_unencrypted_bytes, iv);
 
+		//Log frame len
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Decryptor] Audio Frame Data with frame len %d: ", actualFrame->datalen);
+
         frame_header = allocate_memory(len_unencrypted_bytes);
         if (frame_header == NULL) {
             return;
@@ -3219,6 +3222,7 @@ void decrypt_video_frame(switch_core_session_t *session, switch_frame_t **frame,
     }
 }
 
+
 // Function to encrypt the audio frame
 void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int stream_id, switch_media_type_t type, const uint8_t encryptionKey[]) {
     if (*frame) {
@@ -3236,6 +3240,14 @@ void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
         if (payload == NULL) {
             return;
         }
+
+		// //Log audio encrypted frame len
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Audio Before encryption Frame length: %d\n", actualFrame->datalen);
+		// //Log first 20 of audio frame
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First 20 of audio frame: ");
+		// log_bytes(actualFrame->data, 20);
+
+		
         copy_frame_payload(actualFrame->data, len_unencrypted_bytes, payload_length, payload);
 
 		//Generate and log IV here
@@ -3263,6 +3275,11 @@ void encrypt_audio_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
         actualFrame->datalen = len_unencrypted_bytes + encrypted_len;
         actualFrame->buflen = len_unencrypted_bytes + encrypted_len;
         actualFrame->packetlen = len_unencrypted_bytes + encrypted_len;
+
+		// // Log actualFrame
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Audio After encryption Frame length: %d\n", actualFrame->datalen);
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Audio After encryption Frame data: ");
+		// log_bytes(actualFrame->data, actualFrame->datalen);
 
         free(payload);
         free(encrypted_payload);
@@ -3292,10 +3309,10 @@ void encrypt_video_frame(switch_frame_t **frame, switch_io_flag_t flags, int str
 
 		//Skip pps and sps
 		if(get_nal_unit_category(actualFrame->data) == NAL_UNIT_SPS || get_nal_unit_category(actualFrame->data) == NAL_UNIT_PPS){
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Skip encrypting pps and sps with len %d\n", actualFrame->datalen);
+			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] Skip encrypting pps and sps with len %d\n", actualFrame->datalen);
 			//Log first 20 of sps and pps
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First 20 of sps and pps: ");
-			log_bytes(actualFrame->data, actualFrame->datalen);
+			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[Ivan] First 20 of sps and pps: ");
+			// log_bytes(actualFrame->data, actualFrame->datalen);
 			return;
 		}
 
@@ -3428,7 +3445,9 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	int do_cng = 0;
 
 	//TODO: Ivan - Modify getting encryption key here
-	const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	const uint8_t encryptionKey[] = {72, 174, 128, 72, 99, 156, 132, 66, 124, 246, 182, 66, 70, 178, 116, 200, 118, 175, 131, 18, 178, 49, 152, 192, 254, 156, 63, 90, 176, 145, 150, 18};
+
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	//Get channel name
 	const char *channel_name = switch_channel_get_name(channel);
@@ -3956,7 +3975,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_media_read_frame(switch_core_session
 	} else {
 		*frame = &engine->read_frame;
 		// TODO IVAN 
-		if (strstr(channel_name, "sofia/internal/1016") != NULL) {
+		if (strstr(channel_name, "sofia/external") != NULL) {
 			if(type == SWITCH_MEDIA_TYPE_AUDIO){
 				decrypt_audio_frame(session, frame, flags, stream_id, type, encryptionKey);
 			}
@@ -15308,14 +15327,16 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_encoded_video_frame(sw
 	switch_status_t status = SWITCH_STATUS_FALSE;
 
 	//TODO Ivan
-	const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	const uint8_t encryptionKey[] = {72, 174, 128, 72, 99, 156, 132, 66, 124, 246, 182, 66, 70, 178, 116, 200, 118, 175, 131, 18, 178, 49, 152, 192, 254, 156, 63, 90, 176, 145, 150, 18};
+
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	
 	//Get channel name
 	const char *channel_name = switch_channel_get_name(channel);
 
 	//if channle name contain 1016
-	if(strstr(channel_name, "1016") != NULL){
+	if(strstr(channel_name, "sofia/external") != NULL){
 		encrypt_video_frame(&frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO, encryptionKey);
 
 	}
@@ -16505,7 +16526,8 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 	unsigned int flag = 0, need_codec = 0, perfect = 0, do_bugs = 0, do_write = 0, do_resample = 0, ptime_mismatch = 0, pass_cng = 0, resample = 0;
 	int did_write_resample = 0;
 	//TODO: Ivan - Modify getting encryption key here
-	const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	// const uint8_t encryptionKey[] = {223, 116, 117, 51, 153, 134, 210, 49, 58, 39, 224, 150, 205, 210, 1, 190, 142, 160, 171, 87, 225, 122, 177, 187, 211, 228, 160, 100, 238, 101, 111, 202};
+	const uint8_t encryptionKey[] = {72, 174, 128, 72, 99, 156, 132, 66, 124, 246, 182, 66, 70, 178, 116, 200, 118, 175, 131, 18, 178, 49, 152, 192, 254, 156, 63, 90, 176, 145, 150, 18};
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	//Get channel name
 	const char *channel_name = switch_channel_get_name(channel);
@@ -16643,7 +16665,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_write_frame(switch_core_sess
 		write_frame = frame;
 		//TODO IVAN - It will run here
 		// // Encrypt audio frame
-		if (strstr(channel_name, "sofia/internal/1016") != NULL) {
+		if (strstr(channel_name, "sofia/external") != NULL) {
 			encrypt_audio_frame(&write_frame, flags, stream_id, SWITCH_MEDIA_TYPE_AUDIO, encryptionKey);
 		}
 		//TODO END IVAN

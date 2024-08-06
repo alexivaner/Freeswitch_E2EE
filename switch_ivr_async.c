@@ -3686,8 +3686,6 @@ static switch_bool_t session_audio_callback(switch_media_bug_t *bug, void *user_
 	}
 
 	if (frame) {
-		//Log the frame
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "Ivan switch_ivr_async Frame: %p, datalen: %d, samples: %d, channels: %d\n", frame->data, frame->datalen, frame->samples, read_impl.number_of_channels);
 		if (mute) {
 			if (mute > 1) {
 				switch_generate_sln_silence(frame->data, frame->datalen / 2, read_impl.number_of_channels, mute);
